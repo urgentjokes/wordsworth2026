@@ -68,7 +68,8 @@ fun CrosswordBoardGrid(
     onGridBoundsChanged: (Rect) -> Unit,
     onBoardCellTap: (Int, Int) -> Unit,
     onClearCell: (Int, Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false
 ) {
     val currentBoard by rememberUpdatedState(board)
     val currentBoardSize by rememberUpdatedState(boardSize)
@@ -79,8 +80,8 @@ fun CrosswordBoardGrid(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .shadow(6.dp, RoundedCornerShape(14.dp))
-            .clip(RoundedCornerShape(14.dp))
+            .shadow(if (isCompact) 4.dp else 6.dp, RoundedCornerShape(if (isCompact) 10.dp else 14.dp))
+            .clip(RoundedCornerShape(if (isCompact) 10.dp else 14.dp))
             .background(WordsWorthColors.BoardFrameBackground)
             .padding(boardPadding)
             .onGloballyPositioned { coords ->
@@ -159,6 +160,7 @@ fun CrosswordBoardGrid(
                             focusDirection = focusDirection,
                             isHovered = isHovered,
                             validation = validation,
+                            isCompact = isCompact,
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxSize()
@@ -186,7 +188,8 @@ fun BoardCell(
     focusDirection: WordDirection,
     isHovered: Boolean,
     validation: CellValidation,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false
 ) {
     val isBlocked = WordsWorthLogic.isBlockedCell(letter)
     val isLetter = WordsWorthLogic.isLetterCell(letter)
@@ -212,27 +215,54 @@ fun BoardCell(
     }
 
     val borderWidth = when {
-        !isBlocked && isFocused -> if (boardSize >= 12) 2.3.dp else 3.dp
-        !isBlocked && (isHovered || validation != CellValidation.UNCHECKED) -> 1.8.dp
+        !isBlocked && isFocused -> when {
+            isCompact && boardSize >= 12 -> 1.8.dp
+            isCompact -> 2.2.dp
+            boardSize >= 12 -> 2.3.dp
+            else -> 3.dp
+        }
+        !isBlocked && (isHovered || validation != CellValidation.UNCHECKED) -> if (isCompact) 1.4.dp else 1.8.dp
         else -> 1.dp
     }
 
     val cornerRadius = when {
-        boardSize >= 12 -> 4.dp
-        boardSize >= 9 -> 5.dp
-        else -> 7.dp
+        boardSize >= 12 -> if (isCompact) 3.dp else 4.dp
+        boardSize >= 9 -> if (isCompact) 4.dp else 5.dp
+        else -> if (isCompact) 5.dp else 7.dp
     }
 
-    val letterFontSize = when {
-        boardSize >= 12 -> 13.sp
-        boardSize >= 9 -> 17.sp
-        else -> 24.sp
+    val letterFontSize = if (isCompact) {
+        when {
+            boardSize >= 12 -> 10.sp
+            boardSize >= 9 -> 14.sp
+            else -> 19.sp
+        }
+    } else {
+        when {
+            boardSize >= 12 -> 13.sp
+            boardSize >= 9 -> 17.sp
+            else -> 24.sp
+        }
     }
 
-    val valueFontSize = when {
-        boardSize >= 12 -> 7.sp
-        boardSize >= 9 -> 8.sp
-        else -> 10.sp
+    val valueFontSize = if (isCompact) {
+        when {
+            boardSize >= 12 -> 5.5.sp
+            boardSize >= 9 -> 6.5.sp
+            else -> 8.sp
+        }
+    } else {
+        when {
+            boardSize >= 12 -> 7.sp
+            boardSize >= 9 -> 8.sp
+            else -> 10.sp
+        }
+    }
+
+    val innerPadding = when {
+        isCompact && boardSize >= 9 -> 0.5.dp
+        boardSize >= 12 -> 1.dp
+        else -> 2.dp
     }
 
     Box(
@@ -240,7 +270,7 @@ fun BoardCell(
             .clip(RoundedCornerShape(cornerRadius))
             .background(bgColor)
             .border(borderWidth, borderColor, RoundedCornerShape(cornerRadius))
-            .padding(if (boardSize >= 12) 1.dp else 2.dp)
+            .padding(innerPadding)
     ) {
         // Show centered direction arrow inside an empty focused square
         if (isFocused && !isBlocked && !isLetter) {
@@ -272,7 +302,7 @@ fun BoardCell(
                 color = textColor.copy(alpha = 0.8f),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 1.dp)
+                    .padding(end = if (isCompact) 0.5.dp else 1.dp)
             )
         }
     }
@@ -295,7 +325,8 @@ fun TileKeyboardRack(
     onDragStart: (Char, Offset) -> Unit,
     onDragMove: (Offset) -> Unit,
     onDragEnd: (Char, Offset, Pair<Pair<Int, Int>, Char?>?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false
 ) {
     val keyboardRowsList = WordsWorthLogic.keyboardRows(keyboardLayout)
     val currentKeyboardRows by rememberUpdatedState(keyboardRowsList)
@@ -305,9 +336,12 @@ fun TileKeyboardRack(
     val currentOnDragMove by rememberUpdatedState(onDragMove)
     val currentOnDragEnd by rememberUpdatedState(onDragEnd)
 
+    val outerPadding = if (isCompact) 4.dp else 6.dp
+    val keySpacing = if (isCompact) 3.dp else 4.dp
+
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(if (isCompact) 10.dp else 12.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         ),
@@ -316,7 +350,7 @@ fun TileKeyboardRack(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(6.dp)
+                .padding(outerPadding)
                 .onGloballyPositioned { coords ->
                     onKeyboardOriginChanged(coords.boundsInRoot().topLeft)
                 }
@@ -365,12 +399,12 @@ fun TileKeyboardRack(
                         }
                     }
                 },
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(keySpacing)
         ) {
             for (rowKeys in keyboardRowsList) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(keySpacing)
                 ) {
                     for (letter in rowKeys) {
                         if (letter != null) {
@@ -380,11 +414,13 @@ fun TileKeyboardRack(
                                 letter = letter,
                                 value = value,
                                 isSelected = isSelected,
+                                isCompact = isCompact,
                                 modifier = Modifier.weight(1f)
                             )
                         } else {
                             EraserRackTile(
                                 isSelected = selectedLetter == null,
+                                isCompact = isCompact,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -404,24 +440,28 @@ fun LetterRackTile(
     letter: Char,
     value: Int,
     isSelected: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false
 ) {
     val bgColor = if (isSelected) WordsWorthColors.TileSelectedBackground else WordsWorthColors.TileDefaultBackground
     val borderColor = if (isSelected) WordsWorthColors.TileSelectedBorder else WordsWorthColors.TileDefaultBorder
     val borderWidth = if (isSelected) 2.dp else 1.dp
+    val tileHeight = if (isCompact) 38.dp else 46.dp
+    val letterFontSize = if (isCompact) 16.sp else 18.sp
+    val valueFontSize = if (isCompact) 8.sp else 9.sp
 
     Box(
         modifier = modifier
-            .height(46.dp)
+            .height(tileHeight)
             .shadow(if (isSelected) 3.dp else 1.dp, RoundedCornerShape(6.dp))
             .clip(RoundedCornerShape(6.dp))
             .background(bgColor)
             .border(borderWidth, borderColor, RoundedCornerShape(6.dp))
-            .padding(horizontal = 4.dp, vertical = 2.dp)
+            .padding(horizontal = if (isCompact) 2.dp else 4.dp, vertical = if (isCompact) 1.dp else 2.dp)
     ) {
         Text(
             text = letter.toString(),
-            fontSize = 18.sp,
+            fontSize = letterFontSize,
             fontWeight = FontWeight.ExtraBold,
             color = WordsWorthColors.TilePrimaryText,
             modifier = Modifier
@@ -430,7 +470,7 @@ fun LetterRackTile(
         )
         Text(
             text = value.toString(),
-            fontSize = 9.sp,
+            fontSize = valueFontSize,
             fontWeight = FontWeight.Bold,
             color = WordsWorthColors.TileSubscriptText,
             modifier = Modifier.align(Alignment.BottomEnd)
@@ -444,15 +484,17 @@ fun LetterRackTile(
 @Composable
 fun EraserRackTile(
     isSelected: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false
 ) {
     val bgColor = if (isSelected) WordsWorthColors.EraserSelectedBackground else WordsWorthColors.EraserDefaultBackground
     val borderColor = if (isSelected) WordsWorthColors.InvalidCellBorder else WordsWorthColors.TileDefaultBorder
     val borderWidth = if (isSelected) 2.dp else 1.dp
+    val tileHeight = if (isCompact) 38.dp else 46.dp
 
     Box(
         modifier = modifier
-            .height(46.dp)
+            .height(tileHeight)
             .shadow(if (isSelected) 3.dp else 1.dp, RoundedCornerShape(6.dp))
             .clip(RoundedCornerShape(6.dp))
             .background(bgColor)
@@ -463,13 +505,13 @@ fun EraserRackTile(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "⌫",
-                fontSize = 14.sp,
+                fontSize = if (isCompact) 12.sp else 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = WordsWorthColors.InvalidWordText
             )
             Text(
                 text = "CLR",
-                fontSize = 8.sp,
+                fontSize = if (isCompact) 7.sp else 8.sp,
                 fontWeight = FontWeight.Bold,
                 color = WordsWorthColors.InvalidWordText
             )
