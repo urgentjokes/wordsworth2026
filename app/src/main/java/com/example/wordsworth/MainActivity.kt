@@ -125,14 +125,39 @@ fun formatTimer(seconds: Int): String {
 
 @Composable
 fun TimerCard(
+    timeAttackMinutes: Int?,
+    isBoardLocked: Boolean,
     elapsedSecondsProvider: () -> Int
 ) {
-    val seconds = elapsedSecondsProvider()
+    val elapsed = elapsedSecondsProvider()
+    val displaySeconds = if (timeAttackMinutes != null) {
+        (timeAttackMinutes * 60 - elapsed).coerceAtLeast(0)
+    } else {
+        elapsed
+    }
+    val isTimeUp = timeAttackMinutes != null && isBoardLocked && displaySeconds == 0
+    val isLowTime = timeAttackMinutes != null && displaySeconds <= 10
+    val containerColor = if (isLowTime) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+    val contentColor = if (isLowTime) {
+        MaterialTheme.colorScheme.onError
+    } else {
+        MaterialTheme.colorScheme.onPrimary
+    }
+    val labelText = when {
+        isTimeUp -> "TIME'S UP"
+        timeAttackMinutes != null -> "TIME ATTACK"
+        else -> "TIMER"
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primary
+            containerColor = containerColor
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
@@ -143,16 +168,16 @@ fun TimerCard(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "TIMER",
+                text = labelText,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
+                color = contentColor.copy(alpha = 0.85f)
             )
             Text(
-                text = formatTimer(seconds),
+                text = formatTimer(displaySeconds),
                 fontSize = 30.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onPrimary
+                color = contentColor
             )
         }
     }
@@ -201,12 +226,10 @@ fun WordsWorthApp() {
     var elapsedSeconds by remember { mutableIntStateOf(0) }
     var isTimerRunning by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isTimerRunning) {
-        while (isTimerRunning) {
-            delay(1000L)
-            elapsedSeconds += 1
-        }
-    }
+    // Time Attack mode: null = standard untimed mode, or 1, 3, or 5 minutes
+    var timeAttackMinutes by remember { mutableStateOf<Int?>(null) }
+    var showTimeAttackDialog by remember { mutableStateOf(false) }
+    var isBoardLocked by remember { mutableStateOf(false) }
 
     // Selected letter in rack ('A'..'Z'), or null for Eraser mode
     var selectedLetter by remember { mutableStateOf<Char?>('S') }
@@ -228,6 +251,23 @@ fun WordsWorthApp() {
 
     // Tally result when "Validate" is clicked
     var tallyResult by remember { mutableStateOf<TallyResult?>(null) }
+
+    LaunchedEffect(isTimerRunning, timeAttackMinutes) {
+        while (isTimerRunning) {
+            delay(1000L)
+            elapsedSeconds += 1
+            val limitSeconds = timeAttackMinutes?.times(60)
+            if (limitSeconds != null && elapsedSeconds >= limitSeconds) {
+                elapsedSeconds = limitSeconds
+                isTimerRunning = false
+                isBoardLocked = true
+                focusedCell = null
+                if (isDictionaryLoaded) {
+                    tallyResult = WordsWorthLogic.tallyBoard(board, dictionary)
+                }
+            }
+        }
+    }
 
     // Quit confirmation dialog state
     var showQuitDialog by remember { mutableStateOf(false) }
@@ -261,6 +301,7 @@ fun WordsWorthApp() {
         }
         board = newBoard
         resumedGameId = null
+        isBoardLocked = false
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
         tallyResult = null
@@ -273,6 +314,7 @@ fun WordsWorthApp() {
         val newBoard = WordsWorthLogic.createBlankBoard(boardSize)
         board = newBoard
         resumedGameId = null
+        isBoardLocked = false
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
         tallyResult = null
@@ -285,6 +327,7 @@ fun WordsWorthApp() {
         val newBoard = WordsWorthLogic.generateRandomPatternBoard(boardSize)
         board = newBoard
         resumedGameId = null
+        isBoardLocked = false
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
         tallyResult = null
@@ -318,6 +361,7 @@ fun WordsWorthApp() {
         }
         board = newBoard
         resumedGameId = null
+        isBoardLocked = false
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
         tallyResult = null
@@ -326,6 +370,7 @@ fun WordsWorthApp() {
     }
 
     fun updateCell(row: Int, col: Int, letter: Char?) {
+        if (isBoardLocked) return
         if (WordsWorthLogic.isBlockedCell(board.getOrNull(row)?.getOrNull(col))) {
             return
         }
@@ -381,6 +426,7 @@ fun WordsWorthApp() {
     }
 
     fun onBoardCellTap(row: Int, col: Int) {
+        if (isBoardLocked) return
         if (WordsWorthLogic.isBlockedCell(board.getOrNull(row)?.getOrNull(col))) {
             return
         }
@@ -421,6 +467,7 @@ fun WordsWorthApp() {
     }
 
     fun onKeyboardInput(letter: Char?): Pair<Pair<Int, Int>, Char?>? {
+        if (isBoardLocked) return null
         selectedLetter = letter
         val target = focusedCell ?: firstAvailableCell(board) ?: return null
         val (r, c) = target
@@ -451,6 +498,7 @@ fun WordsWorthApp() {
     }
 
     fun moveFocusByArrow(dRow: Int, dCol: Int, newDirection: WordDirection) {
+        if (isBoardLocked) return
         focusDirection = newDirection
         val size = board.size
         val start = focusedCell ?: firstAvailableCell(board) ?: return
@@ -469,6 +517,7 @@ fun WordsWorthApp() {
     val latestKeyHandler by rememberUpdatedState<(KeyEvent) -> Boolean> { event ->
         val isModalOrSettingsOpen = showSettingsScreen ||
             showQuitDialog ||
+            showTimeAttackDialog ||
             pendingDeleteEntry != null ||
             pendingPatternSwitch != null ||
             pendingWhitelistWord != null ||
@@ -505,10 +554,12 @@ fun WordsWorthApp() {
                             onKeyboardInput(null)
                         }
                         code == KeyEvent.KEYCODE_SPACE || code == KeyEvent.KEYCODE_TAB -> {
-                            focusDirection = if (focusDirection == WordDirection.HORIZONTAL) {
-                                WordDirection.VERTICAL
-                            } else {
-                                WordDirection.HORIZONTAL
+                            if (!isBoardLocked) {
+                                focusDirection = if (focusDirection == WordDirection.HORIZONTAL) {
+                                    WordDirection.VERTICAL
+                                } else {
+                                    WordDirection.HORIZONTAL
+                                }
                             }
                         }
                         code == KeyEvent.KEYCODE_DPAD_LEFT -> {
@@ -564,6 +615,8 @@ fun WordsWorthApp() {
                 Array(size) { c -> savedBoard[r][c] }
             }
             resumedGameId = entry.id
+            isBoardLocked = false
+            timeAttackMinutes = null
             boardSize = size
             isRandomPatternMode = restoredBoard.any { row -> row.any { WordsWorthLogic.isBlockedCell(it) } }
             board = restoredBoard
@@ -584,6 +637,7 @@ fun WordsWorthApp() {
         val newBoard = WordsWorthLogic.exampleBoard(boardSize)
         board = newBoard
         resumedGameId = null
+        isBoardLocked = false
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
         if (!isTimerRunning) {
@@ -620,6 +674,9 @@ fun WordsWorthApp() {
             isRandomPatternMode = isRandomPatternMode,
             onSelectAllBlank = ::selectAllBlank,
             onSelectRandomPattern = ::selectRandomPattern,
+            timeAttackMinutes = timeAttackMinutes,
+            isBoardLocked = isBoardLocked,
+            onClickTimeAttack = { showTimeAttackDialog = true },
             keyboardLayout = keyboardLayout,
             focusedCell = focusedCell,
             focusDirection = focusDirection,
@@ -627,17 +684,19 @@ fun WordsWorthApp() {
             selectedLetter = selectedLetter,
             onKeyboardInput = ::onKeyboardInput,
             onDropLetterOnCell = { r, c, letter, undoPlacement ->
-                // If touch-down on the keyboard had already placed the letter into the previous focusedCell,
-                // restore that cell before dropping onto the dragged target cell
-                undoPlacement?.let { (placedCell, oldChar) ->
-                    if (placedCell.first != r || placedCell.second != c) {
-                        updateCell(placedCell.first, placedCell.second, oldChar)
+                if (!isBoardLocked) {
+                    // If touch-down on the keyboard had already placed the letter into the previous focusedCell,
+                    // restore that cell before dropping onto the dragged target cell
+                    undoPlacement?.let { (placedCell, oldChar) ->
+                        if (placedCell.first != r || placedCell.second != c) {
+                            updateCell(placedCell.first, placedCell.second, oldChar)
+                        }
                     }
+                    val newDir = inferDirectionForCell(r, c, null)
+                    focusDirection = newDir
+                    updateCell(r, c, letter)
+                    advanceFocusFrom(r, c, newDir)
                 }
-                val newDir = inferDirectionForCell(r, c, null)
-                focusDirection = newDir
-                updateCell(r, c, letter)
-                advanceFocusFrom(r, c, newDir)
             },
             onUpdateCell = ::updateCell,
             onClearBoard = ::resetBoardAndTimer,
@@ -662,6 +721,82 @@ fun WordsWorthApp() {
             onClickSavedGame = ::resumeSavedGame,
             onDeleteSavedGame = { entry ->
                 pendingDeleteEntry = entry
+            }
+        )
+    }
+
+    if (showTimeAttackDialog) {
+        AlertDialog(
+            onDismissRequest = { showTimeAttackDialog = false },
+            title = {
+                Text(
+                    text = "Time Attack Mode",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Choose a countdown duration to start a new Time Attack game:"
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(1 to "1 min", 3 to "3 mins", 5 to "5 mins").forEach { (mins, label) ->
+                            val isSelected = timeAttackMinutes == mins
+                            Button(
+                                onClick = {
+                                    showTimeAttackDialog = false
+                                    timeAttackMinutes = mins
+                                    resetBoardAndTimer()
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isSelected) {
+                                        Color(0xFF005B6E)
+                                    } else {
+                                        MaterialTheme.colorScheme.primary
+                                    }
+                                ),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
+                    }
+                    if (timeAttackMinutes != null) {
+                        OutlinedButton(
+                            onClick = {
+                                showTimeAttackDialog = false
+                                timeAttackMinutes = null
+                                resetBoardAndTimer()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                text = "Switch to Standard Mode (No Limit)",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showTimeAttackDialog = false }) {
+                    Text("Cancel", fontWeight = FontWeight.Bold)
+                }
             }
         )
     }
@@ -913,6 +1048,9 @@ fun WordsWorthGameScreen(
     isRandomPatternMode: Boolean,
     onSelectAllBlank: () -> Unit,
     onSelectRandomPattern: () -> Unit,
+    timeAttackMinutes: Int?,
+    isBoardLocked: Boolean,
+    onClickTimeAttack: () -> Unit,
     keyboardLayout: KeyboardLayout,
     focusedCell: Pair<Int, Int>?,
     focusDirection: WordDirection,
@@ -957,6 +1095,7 @@ fun WordsWorthGameScreen(
 
     val currentBoard by rememberUpdatedState(board)
     val currentBoardSize by rememberUpdatedState(boardSize)
+    val currentIsBoardLocked by rememberUpdatedState(isBoardLocked)
     val currentOnBoardCellTap by rememberUpdatedState(onBoardCellTap)
     val currentOnKeyboardInput by rememberUpdatedState(onKeyboardInput)
     val currentOnDropLetterOnCell by rememberUpdatedState(onDropLetterOnCell)
@@ -1126,7 +1265,7 @@ fun WordsWorthGameScreen(
                     // RIGHT AREA:
                     // 1) Left of Board: High Score, Score, Timer (aligned with top row of squares) + Scrollable list of words & values
                     // 2) Center: Game Board + Keyboard + Validate/Quit
-                    // 3) Right of Board: Board Size (6x6, 9x9, 12x12) + Pattern (All-blank, Random pattern)
+                    // 3) Right of Board: Board Size (6x6, 9x9, 12x12) + Pattern (All-blank, Random pattern) + Time Attack
                     Row(
                         verticalAlignment = Alignment.Top,
                         horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
@@ -1153,6 +1292,8 @@ fun WordsWorthGameScreen(
                             onClickHighScore = onClickSavedGame,
                             tallyResult = tallyResult,
                             elapsedSecondsProvider = elapsedSecondsProvider,
+                            timeAttackMinutes = timeAttackMinutes,
+                            isBoardLocked = isBoardLocked,
                             onRequestWhitelistWord = onRequestWhitelistWord,
                             modifier = Modifier
                                 .width(172.dp)
@@ -1267,10 +1408,14 @@ fun WordsWorthGameScreen(
                             Spacer(modifier = Modifier.height(6.dp))
 
                             Text(
-                                text = "Tip: Tap the arrow to toggle direction.",
+                                text = if (isBoardLocked) {
+                                    "Time's up! Board locked — tap Quit to save or Clear to play again."
+                                } else {
+                                    "Tip: Tap the arrow to toggle direction."
+                                },
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1565C0),
+                                color = if (isBoardLocked) Color(0xFFB71C1C) else Color(0xFF1565C0),
                                 modifier = Modifier.fillMaxWidth()
                             )
 
@@ -1322,7 +1467,8 @@ fun WordsWorthGameScreen(
                                                     if (change != null) {
                                                         change.consume()
                                                         lastPos = change.position
-                                                        if (touchedLetter != null &&
+                                                        if (!currentIsBoardLocked &&
+                                                            touchedLetter != null &&
                                                             !isDragging &&
                                                             (lastPos - down.position).getDistance() > dragThresholdPx
                                                         ) {
@@ -1425,6 +1571,7 @@ fun WordsWorthGameScreen(
                         // Options Column Next to the Game Board (outside verticalScroll so taps never get stolen):
                         // 1) Board Size Options (6x6, 9x9, 12x12)
                         // 2) Beneath them: Board Pattern Options (All-blank, Random pattern) with mini screenshots
+                        // 3) One button's worth of space below Random pattern: Time Attack button
                         Column(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -1487,6 +1634,50 @@ fun WordsWorthGameScreen(
                                 isSelected = isRandomPatternMode,
                                 onClick = onSelectRandomPattern
                             )
+
+                            // Leave one button's worth of space between "Random pattern" and "Time Attack"
+                            Spacer(modifier = Modifier.height(50.dp))
+
+                            val isTimeAttackActive = timeAttackMinutes != null
+                            val timeAttackLabel = if (timeAttackMinutes != null) {
+                                "Time Attack\n(${timeAttackMinutes} min${if (timeAttackMinutes > 1) "s" else ""})"
+                            } else {
+                                "Time Attack"
+                            }
+                            if (isTimeAttackActive) {
+                                Button(
+                                    onClick = onClickTimeAttack,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF005B6E)
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+                                ) {
+                                    Text(
+                                        text = timeAttackLabel,
+                                        fontSize = 14.sp,
+                                        lineHeight = 16.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = onClickTimeAttack,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+                                ) {
+                                    Text(
+                                        text = timeAttackLabel,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1537,6 +1728,8 @@ fun ScoreAndWordsColumn(
     onClickHighScore: (SavedGameEntry) -> Unit,
     tallyResult: TallyResult?,
     elapsedSecondsProvider: () -> Int,
+    timeAttackMinutes: Int?,
+    isBoardLocked: Boolean,
     onRequestWhitelistWord: (FormedWord) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1635,7 +1828,11 @@ fun ScoreAndWordsColumn(
         }
 
         // Timer Box under Score (same look and feel, distinct color)
-        TimerCard(elapsedSecondsProvider = elapsedSecondsProvider)
+        TimerCard(
+            elapsedSecondsProvider = elapsedSecondsProvider,
+            timeAttackMinutes = timeAttackMinutes,
+            isBoardLocked = isBoardLocked
+        )
 
         // Scrollable list of all words and their values below the score
         Card(
