@@ -1,0 +1,248 @@
+package com.example.wordsworth
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Typeface
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+data class SavedGameEntry(
+    val id: Long,
+    val score: Int,
+    val elapsedSeconds: Int,
+    val timestamp: String,
+    val screenshotPath: String,
+    val bitmap: Bitmap?
+)
+
+object SavedGamesManager {
+    private const val DIR_NAME = "saved_boards"
+    private const val META_FILE = "saved_games.json"
+
+    private fun getStorageDir(context: Context): File {
+        val dir = File(context.filesDir, DIR_NAME)
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        return dir
+    }
+
+    /**
+     * Generates a crisp bitmap screenshot of the NxN board matching the on-screen board UI.
+     */
+    fun createBoardScreenshot(
+        board: Array<Array<Char?>>,
+        cellValidations: Map<Pair<Int, Int>, CellValidation>
+    ): Bitmap {
+        val boardSize = board.size
+        val sizePx = 420
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+        }
+        val letterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.RIGHT
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        // Outer board background (#4A3222)
+        paint.color = 0xFF4A3222.toInt()
+        val outerRect = RectF(0f, 0f, sizePx.toFloat(), sizePx.toFloat())
+        canvas.drawRoundRect(outerRect, 20f, 20f, paint)
+
+        val padding = 10f
+        val gap = when {
+            boardSize >= 12 -> 3f
+            boardSize >= 9 -> 4.5f
+            else -> 6f
+        }
+        val cornerRadius = when {
+            boardSize >= 12 -> 5f
+            boardSize >= 9 -> 7f
+            else -> 10f
+        }
+        val totalGap = gap * (boardSize - 1)
+        val cellSize = (sizePx - padding * 2 - totalGap) / boardSize
+
+        letterPaint.textSize = cellSize * 0.50f
+        valuePaint.textSize = cellSize * 0.22f
+
+        for (r in 0 until boardSize) {
+            for (c in 0 until boardSize) {
+                val left = padding + c * (cellSize + gap)
+                val top = padding + r * (cellSize + gap)
+                val cellRect = RectF(left, top, left + cellSize, top + cellSize)
+
+                val ch = board[r][c]
+                val isBlocked = WordsWorthLogic.isBlockedCell(ch)
+                val validation = cellValidations[r to c] ?: CellValidation.UNCHECKED
+
+                val bgColor = when {
+                    isBlocked -> 0xFF161311.toInt()
+                    ch == null -> 0xFFEDE4D3.toInt()
+                    validation == CellValidation.VALID -> 0xFFE8F5E9.toInt()
+                    validation == CellValidation.INVALID -> 0xFFFFEBEE.toInt()
+                    else -> 0xFFFFF8E1.toInt()
+                }
+
+                val strokeColor = when {
+                    isBlocked -> 0xFF0B0908.toInt()
+                    validation == CellValidation.VALID -> 0xFF2E7D32.toInt()
+                    validation == CellValidation.INVALID -> 0xFFC62828.toInt()
+                    ch != null -> 0xFFB89B72.toInt()
+                    else -> 0xFFC5B69E.toInt()
+                }
+
+                paint.color = bgColor
+                canvas.drawRoundRect(cellRect, cornerRadius, cornerRadius, paint)
+
+                borderPaint.color = strokeColor
+                borderPaint.strokeWidth = if (validation != CellValidation.UNCHECKED) 2.5f else 1.2f
+                canvas.drawRoundRect(cellRect, cornerRadius, cornerRadius, borderPaint)
+
+                if (WordsWorthLogic.isLetterCell(ch)) {
+                    val letterChar = ch!!
+                    val textColor = when (validation) {
+                        CellValidation.VALID -> 0xFF1B5E20.toInt()
+                        CellValidation.INVALID -> 0xFFB71C1C.toInt()
+                        CellValidation.UNCHECKED -> 0xFF2C1E18.toInt()
+                    }
+                    letterPaint.color = textColor
+                    val centerX = cellRect.centerX()
+                    val centerY = cellRect.centerY() - (letterPaint.descent() + letterPaint.ascent()) / 2f - 1f
+                    canvas.drawText(letterChar.toString(), centerX, centerY, letterPaint)
+
+                    valuePaint.color = textColor
+                    val pts = WordsWorthLogic.letterValue(letterChar).toString()
+                    val inset = (cellSize * 0.08f).coerceAtLeast(2f)
+                    canvas.drawText(
+                        pts,
+                        cellRect.right - inset,
+                        cellRect.bottom - inset,
+                        valuePaint
+                    )
+                }
+            }
+        }
+
+        return bitmap
+    }
+
+    fun saveGame(
+        context: Context,
+        board: Array<Array<Char?>>,
+        tallyResult: TallyResult,
+        elapsedSeconds: Int
+    ): SavedGameEntry {
+        val dir = getStorageDir(context)
+        val id = System.currentTimeMillis()
+        val bitmap = createBoardScreenshot(board, tallyResult.cellValidations)
+        val imageFile = File(dir, "board_$id.png")
+        FileOutputStream(imageFile).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+
+        val timestamp = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(id))
+        val newEntry = SavedGameEntry(
+            id = id,
+            score = tallyResult.totalScore,
+            elapsedSeconds = elapsedSeconds,
+            timestamp = timestamp,
+            screenshotPath = imageFile.absolutePath,
+            bitmap = bitmap
+        )
+
+        val currentArray = readMetadataArray(context)
+        val newObj = JSONObject().apply {
+            put("id", newEntry.id)
+            put("score", newEntry.score)
+            put("elapsedSeconds", newEntry.elapsedSeconds)
+            put("timestamp", newEntry.timestamp)
+            put("screenshotPath", newEntry.screenshotPath)
+        }
+
+        // Prepend newest first (or append in order; we'll store in chronological/newest-top order)
+        val updatedArray = JSONArray()
+        updatedArray.put(newObj)
+        for (i in 0 until currentArray.length()) {
+            updatedArray.put(currentArray.getJSONObject(i))
+        }
+        File(dir, META_FILE).writeText(updatedArray.toString(2))
+
+        return newEntry
+    }
+
+    fun loadSavedGames(context: Context): List<SavedGameEntry> {
+        val array = readMetadataArray(context)
+        val result = mutableListOf<SavedGameEntry>()
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            val path = obj.optString("screenshotPath", "")
+            val bmp = if (path.isNotEmpty() && File(path).exists()) {
+                BitmapFactory.decodeFile(path)
+            } else {
+                null
+            }
+            result.add(
+                SavedGameEntry(
+                    id = obj.optLong("id", 0L),
+                    score = obj.optInt("score", 0),
+                    elapsedSeconds = obj.optInt("elapsedSeconds", 0),
+                    timestamp = obj.optString("timestamp", ""),
+                    screenshotPath = path,
+                    bitmap = bmp
+                )
+            )
+        }
+        return result
+    }
+
+    fun deleteSavedGame(context: Context, id: Long) {
+        val dir = getStorageDir(context)
+        val currentArray = readMetadataArray(context)
+        val updatedArray = JSONArray()
+        for (i in 0 until currentArray.length()) {
+            val obj = currentArray.optJSONObject(i) ?: continue
+            if (obj.optLong("id", -1L) == id) {
+                val path = obj.optString("screenshotPath", "")
+                if (path.isNotEmpty()) {
+                    File(path).delete()
+                }
+            } else {
+                updatedArray.put(obj)
+            }
+        }
+        File(dir, META_FILE).writeText(updatedArray.toString(2))
+    }
+
+    fun clearAllSavedGames(context: Context) {
+        val dir = getStorageDir(context)
+        dir.listFiles()?.forEach { it.delete() }
+    }
+
+    private fun readMetadataArray(context: Context): JSONArray {
+        val metaFile = File(getStorageDir(context), META_FILE)
+        if (!metaFile.exists()) return JSONArray()
+        return try {
+            JSONArray(metaFile.readText())
+        } catch (e: Exception) {
+            JSONArray()
+        }
+    }
+}
