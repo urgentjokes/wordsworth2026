@@ -215,6 +215,12 @@ fun WordsWorthApp() {
     // Keyboard layout preference: ALPHABETICAL or QWERTY
     var keyboardLayout by remember { mutableStateOf(WordsWorthLogic.loadKeyboardLayout(context)) }
 
+    // Extended word scoring preference: EXTENDED_DIFF_ONLY or CUMULATIVE_EXTENDED
+    var scoringMode by remember { mutableStateOf(WordsWorthLogic.loadScoringMode(context)) }
+
+    // Previously validated words during the current game (used when scoringMode == CUMULATIVE_EXTENDED)
+    val validatedWordsHistory = remember { mutableStateListOf<FormedWord>() }
+
     // NxN board state
     var board by remember {
         mutableStateOf(
@@ -252,6 +258,39 @@ fun WordsWorthApp() {
     // Tally result when "Validate" is clicked
     var tallyResult by remember { mutableStateOf<TallyResult?>(null) }
 
+    fun evaluateBoard(
+        targetBoard: Array<Array<Char?>> = board,
+        targetDict: Set<String> = dictionary,
+        targetMode: ScoringMode = scoringMode
+    ): TallyResult {
+        val size = targetBoard.size
+        validatedWordsHistory.retainAll { prev ->
+            prev.cells.indices.all { idx ->
+                val (pr, pc) = prev.cells[idx]
+                pr in 0 until size && pc in 0 until size &&
+                    targetBoard[pr][pc]?.uppercaseChar() == prev.word[idx]
+            }
+        }
+        val result = WordsWorthLogic.tallyBoard(
+            board = targetBoard,
+            dictionary = targetDict,
+            scoringMode = targetMode,
+            previouslyValidatedWords = validatedWordsHistory
+        )
+        for (fw in result.validWords) {
+            val exists = validatedWordsHistory.any {
+                it.direction == fw.direction &&
+                    it.startRow == fw.startRow &&
+                    it.startCol == fw.startCol &&
+                    it.word == fw.word
+            }
+            if (!exists) {
+                validatedWordsHistory.add(fw)
+            }
+        }
+        return result
+    }
+
     LaunchedEffect(isTimerRunning, timeAttackMinutes) {
         while (isTimerRunning) {
             delay(1000L)
@@ -263,7 +302,7 @@ fun WordsWorthApp() {
                 isBoardLocked = true
                 focusedCell = null
                 if (isDictionaryLoaded) {
-                    tallyResult = WordsWorthLogic.tallyBoard(board, dictionary)
+                    tallyResult = evaluateBoard()
                 }
             }
         }
@@ -301,6 +340,7 @@ fun WordsWorthApp() {
         }
         board = newBoard
         resumedGameId = null
+        validatedWordsHistory.clear()
         isBoardLocked = false
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
@@ -314,6 +354,7 @@ fun WordsWorthApp() {
         val newBoard = WordsWorthLogic.createBlankBoard(boardSize)
         board = newBoard
         resumedGameId = null
+        validatedWordsHistory.clear()
         isBoardLocked = false
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
@@ -327,6 +368,7 @@ fun WordsWorthApp() {
         val newBoard = WordsWorthLogic.generateRandomPatternBoard(boardSize)
         board = newBoard
         resumedGameId = null
+        validatedWordsHistory.clear()
         isBoardLocked = false
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
@@ -361,6 +403,7 @@ fun WordsWorthApp() {
         }
         board = newBoard
         resumedGameId = null
+        validatedWordsHistory.clear()
         isBoardLocked = false
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
@@ -381,6 +424,13 @@ fun WordsWorthApp() {
             }
         }
         board = copy
+        validatedWordsHistory.retainAll { prev ->
+            prev.cells.indices.all { idx ->
+                val (pr, pc) = prev.cells[idx]
+                pr in 0 until size && pc in 0 until size &&
+                    copy[pr][pc]?.uppercaseChar() == prev.word[idx]
+            }
+        }
         tallyResult = tallyResult?.let { prev ->
             prev.copy(cellValidations = prev.cellValidations - (row to col))
         }
@@ -576,7 +626,7 @@ fun WordsWorthApp() {
                         }
                         code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER -> {
                             if (isDictionaryLoaded) {
-                                tallyResult = WordsWorthLogic.tallyBoard(board, dictionary)
+                                tallyResult = evaluateBoard()
                             }
                         }
                     }
@@ -615,6 +665,8 @@ fun WordsWorthApp() {
                 Array(size) { c -> savedBoard[r][c] }
             }
             resumedGameId = entry.id
+            validatedWordsHistory.clear()
+            validatedWordsHistory.addAll(entry.validatedWords)
             isBoardLocked = false
             timeAttackMinutes = null
             boardSize = size
@@ -625,7 +677,7 @@ fun WordsWorthApp() {
             elapsedSeconds = entry.elapsedSeconds
             isTimerRunning = true
             if (isDictionaryLoaded) {
-                tallyResult = WordsWorthLogic.tallyBoard(restoredBoard, dictionary)
+                tallyResult = evaluateBoard(restoredBoard)
             }
         } else {
             previewSavedEntry = entry
@@ -637,6 +689,7 @@ fun WordsWorthApp() {
         val newBoard = WordsWorthLogic.exampleBoard(boardSize)
         board = newBoard
         resumedGameId = null
+        validatedWordsHistory.clear()
         isBoardLocked = false
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
@@ -644,7 +697,7 @@ fun WordsWorthApp() {
             isTimerRunning = true
         }
         if (isDictionaryLoaded) {
-            tallyResult = WordsWorthLogic.tallyBoard(newBoard, dictionary)
+            tallyResult = evaluateBoard(newBoard)
         }
     }
 
@@ -654,6 +707,14 @@ fun WordsWorthApp() {
             onChangeKeyboardLayout = { newLayout ->
                 keyboardLayout = newLayout
                 WordsWorthLogic.saveKeyboardLayout(context, newLayout)
+            },
+            scoringMode = scoringMode,
+            onChangeScoringMode = { newMode ->
+                scoringMode = newMode
+                WordsWorthLogic.saveScoringMode(context, newMode)
+                if (tallyResult != null && isDictionaryLoaded) {
+                    tallyResult = evaluateBoard(board, dictionary, newMode)
+                }
             },
             savedGamesCount = savedGames.size,
             onClearSavedGames = {
@@ -706,7 +767,7 @@ fun WordsWorthApp() {
             isDictionaryLoaded = isDictionaryLoaded,
             tallyResult = tallyResult,
             onValidate = {
-                tallyResult = WordsWorthLogic.tallyBoard(board, dictionary)
+                tallyResult = evaluateBoard()
             },
             onRequestWhitelistWord = { formedWord ->
                 pendingWhitelistWord = formedWord
@@ -822,7 +883,7 @@ fun WordsWorthApp() {
                         pendingWhitelistWord = null
                         val updatedDict = dictionary + wordToAdd
                         dictionary = updatedDict
-                        tallyResult = WordsWorthLogic.tallyBoard(board, updatedDict)
+                        tallyResult = evaluateBoard(board, updatedDict, scoringMode)
                         coroutineScope.launch(Dispatchers.IO) {
                             WordsWorthLogic.addWordToWhitelist(context, wordToAdd)
                         }
@@ -896,9 +957,14 @@ fun WordsWorthApp() {
                 )
             },
             text = {
-                val previewScore = remember(board, dictionary) {
+                val previewScore = remember(board, dictionary, scoringMode, validatedWordsHistory.size) {
                     if (isDictionaryLoaded) {
-                        WordsWorthLogic.tallyBoard(board, dictionary).totalScore
+                        WordsWorthLogic.tallyBoard(
+                            board = board,
+                            dictionary = dictionary,
+                            scoringMode = scoringMode,
+                            previouslyValidatedWords = validatedWordsHistory
+                        ).totalScore
                     } else 0
                 }
                 Text(
@@ -910,7 +976,7 @@ fun WordsWorthApp() {
                 Button(
                     onClick = {
                         showQuitDialog = false
-                        val finalTally = WordsWorthLogic.tallyBoard(board, dictionary)
+                        val finalTally = evaluateBoard()
                         val size = board.size
                         val boardSnapshot = Array(size) { r ->
                             Array(size) { c -> board[r][c] }
@@ -2075,6 +2141,8 @@ fun SavedBoardThumbnailItem(
 fun SettingsScreen(
     keyboardLayout: KeyboardLayout,
     onChangeKeyboardLayout: (KeyboardLayout) -> Unit,
+    scoringMode: ScoringMode,
+    onChangeScoringMode: (ScoringMode) -> Unit,
     savedGamesCount: Int,
     onClearSavedGames: () -> Unit,
     onBack: () -> Unit
@@ -2157,6 +2225,70 @@ fun SettingsScreen(
                             } else {
                                 OutlinedButton(
                                     onClick = { onChangeKeyboardLayout(option) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text(
+                                        text = option.label,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Extended Word Scoring",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = scoringMode.description,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ScoringMode.entries.forEach { option ->
+                            val isSelected = scoringMode == option
+                            if (isSelected) {
+                                Button(
+                                    onClick = { onChangeScoringMode(option) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary
+                                    )
+                                ) {
+                                    Text(
+                                        text = option.label,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { onChangeScoringMode(option) },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(10.dp)
                                 ) {

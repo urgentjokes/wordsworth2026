@@ -12,6 +12,17 @@ enum class KeyboardLayout(val label: String) {
     QWERTY("QWERTY")
 }
 
+enum class ScoringMode(val label: String, val description: String) {
+    EXTENDED_DIFF_ONLY(
+        label = "New Letters Only",
+        description = "Extending a validated word (e.g., SOUND → SOUNDLY) replaces the shorter word, adding only the new letters' points."
+    ),
+    CUMULATIVE_EXTENDED(
+        label = "Keep Base Word Points",
+        description = "Extending a validated word (e.g., SOUND → SOUNDLY) keeps the original word's points and also awards full points for the extended word."
+    )
+}
+
 enum class CellValidation {
     UNCHECKED,
     VALID,
@@ -103,6 +114,7 @@ object WordsWorthLogic {
 
     private const val PREFS_NAME = "wordsworth_prefs"
     private const val KEY_KEYBOARD_LAYOUT = "keyboard_layout"
+    private const val KEY_SCORING_MODE = "scoring_mode"
 
     fun loadKeyboardLayout(context: Context): KeyboardLayout {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -118,6 +130,23 @@ object WordsWorthLogic {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_KEYBOARD_LAYOUT, layout.name)
+            .apply()
+    }
+
+    fun loadScoringMode(context: Context): ScoringMode {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val saved = prefs.getString(KEY_SCORING_MODE, ScoringMode.EXTENDED_DIFF_ONLY.name)
+        return try {
+            ScoringMode.valueOf(saved ?: ScoringMode.EXTENDED_DIFF_ONLY.name)
+        } catch (_: Exception) {
+            ScoringMode.EXTENDED_DIFF_ONLY
+        }
+    }
+
+    fun saveScoringMode(context: Context, mode: ScoringMode) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_SCORING_MODE, mode.name)
             .apply()
     }
 
@@ -297,7 +326,9 @@ object WordsWorthLogic {
      */
     fun tallyBoard(
         board: Array<Array<Char?>>,
-        dictionary: Set<String>
+        dictionary: Set<String>,
+        scoringMode: ScoringMode = ScoringMode.EXTENDED_DIFF_ONLY,
+        previouslyValidatedWords: Collection<FormedWord> = emptyList()
     ): TallyResult {
         val size = board.size
         val foundWords = mutableListOf<FormedWord>()
@@ -403,11 +434,53 @@ object WordsWorthLogic {
             }
         }
 
-        val totalScore = foundWords.sumOf { it.awardedPoints }
+        val allScoredWords = if (scoringMode == ScoringMode.CUMULATIVE_EXTENDED && previouslyValidatedWords.isNotEmpty()) {
+            val combined = mutableListOf<FormedWord>()
+            val seenKeys = HashSet<String>()
+            for (curr in foundWords) {
+                if (curr.isValid) {
+                    val currCellSet = curr.cells.toSet()
+                    val extendedBaseWords = previouslyValidatedWords
+                        .filter { prev ->
+                            dictionary.contains(prev.word) &&
+                                prev.direction == curr.direction &&
+                                prev.cells.size < curr.cells.size &&
+                                currCellSet.containsAll(prev.cells) &&
+                                prev.cells.indices.all { idx ->
+                                    val (pr, pc) = prev.cells[idx]
+                                    pr in 0 until size && pc in 0 until size &&
+                                        board[pr][pc]?.uppercaseChar() == prev.word[idx]
+                                }
+                        }
+                        .sortedBy { it.cells.size }
+
+                    for (baseWord in extendedBaseWords) {
+                        val key = "${baseWord.direction}_${baseWord.startRow}_${baseWord.startCol}_${baseWord.word}"
+                        if (seenKeys.add(key)) {
+                            combined.add(
+                                baseWord.copy(
+                                    rawPoints = wordRawScore(baseWord.word),
+                                    isValid = true
+                                )
+                            )
+                        }
+                    }
+                }
+                val currKey = "${curr.direction}_${curr.startRow}_${curr.startCol}_${curr.word}"
+                if (seenKeys.add(currKey)) {
+                    combined.add(curr)
+                }
+            }
+            combined
+        } else {
+            foundWords
+        }
+
+        val totalScore = allScoredWords.sumOf { it.awardedPoints }
 
         return TallyResult(
             totalScore = totalScore,
-            words = foundWords,
+            words = allScoredWords,
             isolatedCells = isolated,
             cellValidations = cellValidations
         )

@@ -22,7 +22,8 @@ data class SavedGameEntry(
     val timestamp: String,
     val screenshotPath: String,
     val bitmap: Bitmap?,
-    val board: Array<Array<Char?>>? = null
+    val board: Array<Array<Char?>>? = null,
+    val validatedWords: List<FormedWord> = emptyList()
 )
 
 object SavedGamesManager {
@@ -51,6 +52,57 @@ object SavedGamesManager {
                 if (str.isNotEmpty()) str[0] else null
             }
         }
+    }
+
+    private fun serializeValidatedWords(words: List<FormedWord>): JSONArray {
+        val arr = JSONArray()
+        for (fw in words) {
+            if (!fw.isValid) continue
+            val obj = JSONObject().apply {
+                put("word", fw.word)
+                put("direction", fw.direction.name)
+                put("startRow", fw.startRow)
+                put("startCol", fw.startCol)
+            }
+            arr.put(obj)
+        }
+        return arr
+    }
+
+    private fun deserializeValidatedWords(arr: JSONArray?): List<FormedWord> {
+        if (arr == null || arr.length() == 0) return emptyList()
+        val result = mutableListOf<FormedWord>()
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val word = obj.optString("word", "").uppercase()
+            if (word.length < 2) continue
+            val dirName = obj.optString("direction", WordDirection.HORIZONTAL.name)
+            val direction = try {
+                WordDirection.valueOf(dirName)
+            } catch (_: Exception) {
+                WordDirection.HORIZONTAL
+            }
+            val startRow = obj.optInt("startRow", 0)
+            val startCol = obj.optInt("startCol", 0)
+            val cells = word.indices.map { idx ->
+                when (direction) {
+                    WordDirection.HORIZONTAL -> startRow to (startCol + idx)
+                    WordDirection.VERTICAL -> (startRow + idx) to startCol
+                }
+            }
+            result.add(
+                FormedWord(
+                    word = word,
+                    direction = direction,
+                    startRow = startRow,
+                    startCol = startCol,
+                    cells = cells,
+                    rawPoints = WordsWorthLogic.wordRawScore(word),
+                    isValid = true
+                )
+            )
+        }
+        return result
     }
 
     private fun getStorageDir(context: Context): File {
@@ -187,6 +239,7 @@ object SavedGamesManager {
         val boardCopy = Array(board.size) { r ->
             Array(board.size) { c -> board[r][c] }
         }
+        val validWordsSnapshot = tallyResult.validWords
         val timestamp = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(id))
         val newEntry = SavedGameEntry(
             id = id,
@@ -195,7 +248,8 @@ object SavedGamesManager {
             timestamp = timestamp,
             screenshotPath = imageFile.absolutePath,
             bitmap = bitmap,
-            board = boardCopy
+            board = boardCopy,
+            validatedWords = validWordsSnapshot
         )
 
         val currentArray = readMetadataArray(context)
@@ -206,6 +260,7 @@ object SavedGamesManager {
             put("timestamp", newEntry.timestamp)
             put("screenshotPath", newEntry.screenshotPath)
             put("board", serializeBoard(boardCopy))
+            put("validatedWords", serializeValidatedWords(validWordsSnapshot))
         }
 
         val updatedArray = JSONArray()
@@ -238,6 +293,7 @@ object SavedGamesManager {
                 null
             }
             val savedBoard = deserializeBoard(obj.optJSONArray("board"))
+            val savedValidatedWords = deserializeValidatedWords(obj.optJSONArray("validatedWords"))
             result.add(
                 SavedGameEntry(
                     id = obj.optLong("id", 0L),
@@ -246,7 +302,8 @@ object SavedGamesManager {
                     timestamp = obj.optString("timestamp", ""),
                     screenshotPath = path,
                     bitmap = bmp,
-                    board = savedBoard
+                    board = savedBoard,
+                    validatedWords = savedValidatedWords
                 )
             )
         }
