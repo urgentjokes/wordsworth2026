@@ -15,6 +15,20 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Represents a completed or paused game saved in the "Previous Games" column.
+ *
+ * @property id Unique millisecond timestamp identifier of this saved entry.
+ * @property score Tallied score at the moment the game was saved.
+ * @property elapsedSeconds Total elapsed seconds on the timer when saved.
+ * @property timestamp Human-readable date/time string (e.g., `"Oct 22, 21:30"`).
+ * @property screenshotPath Absolute path to the PNG board thumbnail on internal storage.
+ * @property bitmap Decoded [Bitmap] thumbnail for fast rendering in the UI.
+ * @property board Optional 2D array snapshot of the board's cells (`null` = empty, `'#'` = blocked, `'A'..'Z'` = letter)
+ *   allowing the player to tap the entry and resume playing.
+ * @property validatedWords Previously validated [FormedWord]s from that session, preserved so
+ *   [ScoringMode.CUMULATIVE_EXTENDED] retains base word points after resuming.
+ */
 data class SavedGameEntry(
     val id: Long,
     val score: Int,
@@ -26,10 +40,18 @@ data class SavedGameEntry(
     val validatedWords: List<FormedWord> = emptyList()
 )
 
+/**
+ * Manages persistence, JSON serialization, and off-screen Canvas thumbnail rendering
+ * for saved WordsWorth games.
+ */
 object SavedGamesManager {
     private const val DIR_NAME = "saved_boards"
     private const val META_FILE = "saved_games.json"
 
+    /**
+     * Serializes a 2D board array into a nested [JSONArray] of single-character strings
+     * (or `""` for empty squares).
+     */
     private fun serializeBoard(board: Array<Array<Char?>>): JSONArray {
         val rowsArray = JSONArray()
         for (row in board) {
@@ -42,6 +64,10 @@ object SavedGamesManager {
         return rowsArray
     }
 
+    /**
+     * Reconstructs a 2D board array from a serialized [JSONArray], or returns `null`
+     * for legacy entries saved before board state persistence was added.
+     */
     private fun deserializeBoard(rowsArray: JSONArray?): Array<Array<Char?>>? {
         if (rowsArray == null || rowsArray.length() == 0) return null
         val size = rowsArray.length()
@@ -54,6 +80,10 @@ object SavedGamesManager {
         }
     }
 
+    /**
+     * Serializes the list of valid [FormedWord]s so base words validated before an extension
+     * can be restored when a saved game is resumed.
+     */
     private fun serializeValidatedWords(words: List<FormedWord>): JSONArray {
         val arr = JSONArray()
         for (fw in words) {
@@ -69,6 +99,9 @@ object SavedGamesManager {
         return arr
     }
 
+    /**
+     * Deserializes previously validated [FormedWord]s from a saved game's JSON metadata.
+     */
     private fun deserializeValidatedWords(arr: JSONArray?): List<FormedWord> {
         if (arr == null || arr.length() == 0) return emptyList()
         val result = mutableListOf<FormedWord>()
@@ -105,6 +138,7 @@ object SavedGamesManager {
         return result
     }
 
+    /** Returns (and creates if necessary) the internal storage directory for saved game assets. */
     private fun getStorageDir(context: Context): File {
         val dir = File(context.filesDir, DIR_NAME)
         if (!dir.exists()) {
@@ -114,7 +148,8 @@ object SavedGamesManager {
     }
 
     /**
-     * Generates a crisp bitmap screenshot of the NxN board matching the on-screen board UI.
+     * Renders a crisp 420x420px [Bitmap] screenshot of the NxN [board] matching the on-screen
+     * board's colors, cell borders, letters, point subscripts, and validation states.
      */
     fun createBoardScreenshot(
         board: Array<Array<Char?>>,
@@ -138,7 +173,7 @@ object SavedGamesManager {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
 
-        // Outer board background (#4A3222)
+        // Outer board frame background (#4A3222)
         paint.color = 0xFF4A3222.toInt()
         val outerRect = RectF(0f, 0f, sizePx.toFloat(), sizePx.toFloat())
         canvas.drawRoundRect(outerRect, 20f, 20f, paint)
@@ -221,6 +256,13 @@ object SavedGamesManager {
         return bitmap
     }
 
+    /**
+     * Saves the given [board], [tallyResult], and [elapsedSeconds] to disk and returns the
+     * resulting [SavedGameEntry].
+     *
+     * @param replaceId Optional ID of an existing saved game that was resumed; if non-null,
+     *   the old entry and its PNG screenshot are replaced so re-saving updates in place.
+     */
     fun saveGame(
         context: Context,
         board: Array<Array<Char?>>,
@@ -281,6 +323,9 @@ object SavedGamesManager {
         return newEntry
     }
 
+    /**
+     * Loads all saved game entries from `saved_games.json` in reverse-chronological order.
+     */
     fun loadSavedGames(context: Context): List<SavedGameEntry> {
         val array = readMetadataArray(context)
         val result = mutableListOf<SavedGameEntry>()
@@ -310,6 +355,7 @@ object SavedGamesManager {
         return result
     }
 
+    /** Deletes a single saved game entry and its PNG screenshot by [id]. */
     fun deleteSavedGame(context: Context, id: Long) {
         val dir = getStorageDir(context)
         val currentArray = readMetadataArray(context)
@@ -328,6 +374,7 @@ object SavedGamesManager {
         File(dir, META_FILE).writeText(updatedArray.toString(2))
     }
 
+    /** Deletes all saved game metadata and screenshot files. */
     fun clearAllSavedGames(context: Context) {
         val dir = getStorageDir(context)
         dir.listFiles()?.forEach { it.delete() }
@@ -338,7 +385,7 @@ object SavedGamesManager {
         if (!metaFile.exists()) return JSONArray()
         return try {
             JSONArray(metaFile.readText())
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             JSONArray()
         }
     }
