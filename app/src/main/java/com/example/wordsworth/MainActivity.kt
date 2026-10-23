@@ -1,6 +1,7 @@
 package com.example.wordsworth
 
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -33,6 +34,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -54,6 +56,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -94,6 +97,15 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
+    var hardwareKeyHandler: ((KeyEvent) -> Boolean)? = null
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (hardwareKeyHandler?.invoke(event) == true) {
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -112,36 +124,37 @@ fun formatTimer(seconds: Int): String {
 }
 
 @Composable
-fun TimerBadge(
-    isTimerRunning: Boolean,
+fun TimerCard(
     elapsedSecondsProvider: () -> Int
 ) {
     val seconds = elapsedSecondsProvider()
-    Surface(
-        color = if (isTimerRunning) {
-            Color(0xFFE8F5E9)
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant
-        },
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.border(
-            width = 1.dp,
-            color = if (isTimerRunning) Color(0xFF2E7D32) else Color(0xFFB89B72),
-            shape = RoundedCornerShape(16.dp)
-        )
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primary
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
-        Text(
-            text = "⏱ ${formatTimer(seconds)}",
-            fontFamily = FontFamily.Monospace,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (isTimerRunning) {
-                Color(0xFF1B5E20)
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "TIMER",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
+            )
+            Text(
+                text = formatTimer(seconds),
+                fontSize = 30.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onPrimary
+            )
+        }
     }
 }
 
@@ -173,6 +186,9 @@ fun WordsWorthApp() {
 
     // Board pattern mode: false = All-blank, true = Random pattern
     var isRandomPatternMode by remember { mutableStateOf(false) }
+
+    // Keyboard layout preference: ALPHABETICAL or QWERTY
+    var keyboardLayout by remember { mutableStateOf(WordsWorthLogic.loadKeyboardLayout(context)) }
 
     // NxN board state
     var board by remember {
@@ -228,6 +244,9 @@ fun WordsWorthApp() {
     // Invalid word pending whitelist confirmation after long-press
     var pendingWhitelistWord by remember { mutableStateOf<FormedWord?>(null) }
 
+    // ID of the saved game currently resumed on the board (null if playing a brand-new game)
+    var resumedGameId by remember { mutableStateOf<Long?>(null) }
+
     fun isGameInProgress(): Boolean {
         return isTimerRunning || board.any { row -> row.any { WordsWorthLogic.isLetterCell(it) } }
     }
@@ -241,6 +260,7 @@ fun WordsWorthApp() {
             }
         }
         board = newBoard
+        resumedGameId = null
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
         tallyResult = null
@@ -252,6 +272,7 @@ fun WordsWorthApp() {
         isRandomPatternMode = false
         val newBoard = WordsWorthLogic.createBlankBoard(boardSize)
         board = newBoard
+        resumedGameId = null
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
         tallyResult = null
@@ -263,6 +284,7 @@ fun WordsWorthApp() {
         isRandomPatternMode = true
         val newBoard = WordsWorthLogic.generateRandomPatternBoard(boardSize)
         board = newBoard
+        resumedGameId = null
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
         tallyResult = null
@@ -295,6 +317,7 @@ fun WordsWorthApp() {
             WordsWorthLogic.createBlankBoard(newSize)
         }
         board = newBoard
+        resumedGameId = null
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
         tallyResult = null
@@ -427,10 +450,140 @@ fun WordsWorthApp() {
         }
     }
 
+    fun moveFocusByArrow(dRow: Int, dCol: Int, newDirection: WordDirection) {
+        focusDirection = newDirection
+        val size = board.size
+        val start = focusedCell ?: firstAvailableCell(board) ?: return
+        var r = start.first + dRow
+        var c = start.second + dCol
+        while (r in 0 until size && c in 0 until size) {
+            if (!WordsWorthLogic.isBlockedCell(board[r][c])) {
+                focusedCell = r to c
+                return
+            }
+            r += dRow
+            c += dCol
+        }
+    }
+
+    val latestKeyHandler by rememberUpdatedState<(KeyEvent) -> Boolean> { event ->
+        val isModalOrSettingsOpen = showSettingsScreen ||
+            showQuitDialog ||
+            pendingDeleteEntry != null ||
+            pendingPatternSwitch != null ||
+            pendingWhitelistWord != null ||
+            previewSavedEntry != null
+
+        if (isModalOrSettingsOpen) {
+            false
+        } else if (event.isCtrlPressed || event.isAltPressed || event.isMetaPressed) {
+            false
+        } else {
+            val code = event.keyCode
+            val isHandledKey = code in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z ||
+                code == KeyEvent.KEYCODE_DEL ||
+                code == KeyEvent.KEYCODE_FORWARD_DEL ||
+                code == KeyEvent.KEYCODE_SPACE ||
+                code == KeyEvent.KEYCODE_TAB ||
+                code == KeyEvent.KEYCODE_DPAD_LEFT ||
+                code == KeyEvent.KEYCODE_DPAD_RIGHT ||
+                code == KeyEvent.KEYCODE_DPAD_UP ||
+                code == KeyEvent.KEYCODE_DPAD_DOWN ||
+                code == KeyEvent.KEYCODE_ENTER ||
+                code == KeyEvent.KEYCODE_NUMPAD_ENTER
+
+            if (!isHandledKey) {
+                false
+            } else {
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    when {
+                        code in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> {
+                            val letter = ('A'.code + (code - KeyEvent.KEYCODE_A)).toChar()
+                            onKeyboardInput(letter)
+                        }
+                        code == KeyEvent.KEYCODE_DEL || code == KeyEvent.KEYCODE_FORWARD_DEL -> {
+                            onKeyboardInput(null)
+                        }
+                        code == KeyEvent.KEYCODE_SPACE || code == KeyEvent.KEYCODE_TAB -> {
+                            focusDirection = if (focusDirection == WordDirection.HORIZONTAL) {
+                                WordDirection.VERTICAL
+                            } else {
+                                WordDirection.HORIZONTAL
+                            }
+                        }
+                        code == KeyEvent.KEYCODE_DPAD_LEFT -> {
+                            moveFocusByArrow(0, -1, WordDirection.HORIZONTAL)
+                        }
+                        code == KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            moveFocusByArrow(0, 1, WordDirection.HORIZONTAL)
+                        }
+                        code == KeyEvent.KEYCODE_DPAD_UP -> {
+                            moveFocusByArrow(-1, 0, WordDirection.VERTICAL)
+                        }
+                        code == KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            moveFocusByArrow(1, 0, WordDirection.VERTICAL)
+                        }
+                        code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                            if (isDictionaryLoaded) {
+                                tallyResult = WordsWorthLogic.tallyBoard(board, dictionary)
+                            }
+                        }
+                    }
+                }
+                true
+            }
+        }
+    }
+
+    DisposableEffect(context) {
+        val activity = context as? MainActivity
+        activity?.hardwareKeyHandler = { event -> latestKeyHandler(event) }
+        onDispose {
+            if (activity != null) {
+                activity.hardwareKeyHandler = null
+            }
+        }
+    }
+
+    fun firstEmptyOrAvailableCell(targetBoard: Array<Array<Char?>>): Pair<Int, Int>? {
+        for (r in targetBoard.indices) {
+            for (c in targetBoard[r].indices) {
+                if (targetBoard[r][c] == null) {
+                    return r to c
+                }
+            }
+        }
+        return firstAvailableCell(targetBoard)
+    }
+
+    fun resumeSavedGame(entry: SavedGameEntry) {
+        val savedBoard = entry.board
+        if (savedBoard != null && savedBoard.isNotEmpty()) {
+            val size = savedBoard.size
+            val restoredBoard = Array(size) { r ->
+                Array(size) { c -> savedBoard[r][c] }
+            }
+            resumedGameId = entry.id
+            boardSize = size
+            isRandomPatternMode = restoredBoard.any { row -> row.any { WordsWorthLogic.isBlockedCell(it) } }
+            board = restoredBoard
+            focusedCell = firstEmptyOrAvailableCell(restoredBoard)
+            focusDirection = WordDirection.HORIZONTAL
+            elapsedSeconds = entry.elapsedSeconds
+            isTimerRunning = true
+            if (isDictionaryLoaded) {
+                tallyResult = WordsWorthLogic.tallyBoard(restoredBoard, dictionary)
+            }
+        } else {
+            previewSavedEntry = entry
+        }
+    }
+
     fun loadExample() {
         isRandomPatternMode = false
         val newBoard = WordsWorthLogic.exampleBoard(boardSize)
         board = newBoard
+        resumedGameId = null
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
         if (!isTimerRunning) {
@@ -443,6 +596,11 @@ fun WordsWorthApp() {
 
     if (showSettingsScreen) {
         SettingsScreen(
+            keyboardLayout = keyboardLayout,
+            onChangeKeyboardLayout = { newLayout ->
+                keyboardLayout = newLayout
+                WordsWorthLogic.saveKeyboardLayout(context, newLayout)
+            },
             savedGamesCount = savedGames.size,
             onClearSavedGames = {
                 coroutineScope.launch(Dispatchers.IO) {
@@ -462,15 +620,9 @@ fun WordsWorthApp() {
             isRandomPatternMode = isRandomPatternMode,
             onSelectAllBlank = ::selectAllBlank,
             onSelectRandomPattern = ::selectRandomPattern,
+            keyboardLayout = keyboardLayout,
             focusedCell = focusedCell,
             focusDirection = focusDirection,
-            onToggleFocusDirection = {
-                focusDirection = if (focusDirection == WordDirection.HORIZONTAL) {
-                    WordDirection.VERTICAL
-                } else {
-                    WordDirection.HORIZONTAL
-                }
-            },
             onBoardCellTap = ::onBoardCellTap,
             selectedLetter = selectedLetter,
             onKeyboardInput = ::onKeyboardInput,
@@ -507,9 +659,7 @@ fun WordsWorthApp() {
                 showSettingsScreen = true
             },
             savedGames = savedGames,
-            onClickSavedGame = { entry ->
-                previewSavedEntry = entry
-            },
+            onClickSavedGame = ::resumeSavedGame,
             onDeleteSavedGame = { entry ->
                 pendingDeleteEntry = entry
             }
@@ -631,6 +781,7 @@ fun WordsWorthApp() {
                             Array(size) { c -> board[r][c] }
                         }
                         val finalSeconds = elapsedSeconds
+                        val replacingId = resumedGameId
                         resetBoardAndTimer()
 
                         coroutineScope.launch {
@@ -639,8 +790,12 @@ fun WordsWorthApp() {
                                     context = context,
                                     board = boardSnapshot,
                                     tallyResult = finalTally,
-                                    elapsedSeconds = finalSeconds
+                                    elapsedSeconds = finalSeconds,
+                                    replaceId = replacingId
                                 )
+                            }
+                            if (replacingId != null) {
+                                savedGames.removeAll { it.id == replacingId }
                             }
                             savedGames.add(0, savedEntry)
                         }
@@ -758,9 +913,9 @@ fun WordsWorthGameScreen(
     isRandomPatternMode: Boolean,
     onSelectAllBlank: () -> Unit,
     onSelectRandomPattern: () -> Unit,
+    keyboardLayout: KeyboardLayout,
     focusedCell: Pair<Int, Int>?,
     focusDirection: WordDirection,
-    onToggleFocusDirection: () -> Unit,
     onBoardCellTap: (Int, Int) -> Unit,
     selectedLetter: Char?,
     onKeyboardInput: (Char?) -> Pair<Pair<Int, Int>, Char?>?,
@@ -843,29 +998,18 @@ fun WordsWorthGameScreen(
                     .fillMaxSize()
                     .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
-                // Top Bar: App Title, Timer, Example/Clear, and Settings Gear Icon
+                // Top Bar: App Title, Example/Clear, and Settings Gear Icon
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            text = "WordsWorth",
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-
-                        // Timer Badge (starts at 0:00 when first letter is placed)
-                        TimerBadge(
-                            isTimerRunning = isTimerRunning,
-                            elapsedSecondsProvider = elapsedSecondsProvider
-                        )
-                    }
+                    Text(
+                        text = "WordsWorth",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -955,7 +1099,14 @@ fun WordsWorthGameScreen(
                                     )
                                 }
                             } else {
+                                val previousGamesListState = rememberLazyListState()
+                                LaunchedEffect(savedGames.firstOrNull()?.id, savedGames.size) {
+                                    if (savedGames.isNotEmpty()) {
+                                        previousGamesListState.scrollToItem(0)
+                                    }
+                                }
                                 LazyColumn(
+                                    state = previousGamesListState,
                                     modifier = Modifier.fillMaxSize(),
                                     verticalArrangement = Arrangement.spacedBy(10.dp),
                                     contentPadding = PaddingValues(bottom = 8.dp)
@@ -973,7 +1124,7 @@ fun WordsWorthGameScreen(
                     }
 
                     // RIGHT AREA:
-                    // 1) Left of Board: Score (aligned with top row of squares) + Scrollable list of words & values
+                    // 1) Left of Board: High Score, Score, Timer (aligned with top row of squares) + Scrollable list of words & values
                     // 2) Center: Game Board + Keyboard + Validate/Quit
                     // 3) Right of Board: Board Size (6x6, 9x9, 12x12) + Pattern (All-blank, Random pattern)
                     Row(
@@ -995,9 +1146,13 @@ fun WordsWorthGameScreen(
                         }
 
                         // Column to the LEFT of the board, aligned with the top row of squares:
-                        // Shows Score at the top and a scrollable list of all words and their values below it.
+                        // Shows High Score, Score, and Timer at the top and a scrollable list of all words and their values below.
+                        val highScoreEntry = savedGames.maxByOrNull { it.score }
                         ScoreAndWordsColumn(
+                            highScoreEntry = highScoreEntry,
+                            onClickHighScore = onClickSavedGame,
                             tallyResult = tallyResult,
+                            elapsedSecondsProvider = elapsedSecondsProvider,
                             onRequestWhitelistWord = onRequestWhitelistWord,
                             modifier = Modifier
                                 .width(172.dp)
@@ -1111,50 +1266,20 @@ fun WordsWorthGameScreen(
 
                             Spacer(modifier = Modifier.height(6.dp))
 
-                            // Cursor Focus & Direction Indicator Bar
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = if (focusedCell != null) {
-                                        "Cursor: Row ${focusedCell.first + 1}, Col ${focusedCell.second + 1} (tap square to move)"
-                                    } else {
-                                        "Tap a square on the board to focus"
-                                    },
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1565C0)
-                                )
-                                Surface(
-                                    color = Color(0xFFE3F2FD),
-                                    shape = RoundedCornerShape(14.dp),
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .border(1.dp, Color(0xFF1565C0), RoundedCornerShape(14.dp))
-                                        .clickable { onToggleFocusDirection() }
-                                ) {
-                                    Text(
-                                        text = if (focusDirection == WordDirection.HORIZONTAL) {
-                                            "Direction: Across →"
-                                        } else {
-                                            "Direction: Down ↓"
-                                        },
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = Color(0xFF1565C0),
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
-                                    )
-                                }
-                            }
+                            Text(
+                                text = "Tip: Tap the arrow to toggle direction.",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1565C0),
+                                modifier = Modifier.fillMaxWidth()
+                            )
 
                             Spacer(modifier = Modifier.height(4.dp))
 
-                            // Alphabet List of Tiles (Keyboard) — 3x9 full-width grid (26 letters + CLR)
+                            // Keyboard of Tiles (Alphabetical 3x9 or QWERTY 10/9/8)
                             // Tapping a letter immediately populates the focused square and advances focus to the next square!
-                            val keyboardRows = 3
-                            val keyboardCols = 9
+                            val keyboardRowsList = WordsWorthLogic.keyboardRows(keyboardLayout)
+                            val currentKeyboardRows by rememberUpdatedState(keyboardRowsList)
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
@@ -1175,19 +1300,15 @@ fun WordsWorthGameScreen(
                                                 val down = awaitFirstDown(requireUnconsumed = false)
                                                 down.consume()
 
+                                                val rows = currentKeyboardRows
                                                 val w = this.size.width.coerceAtLeast(1)
                                                 val h = this.size.height.coerceAtLeast(1)
-                                                val col = ((down.position.x / w) * keyboardCols).toInt()
-                                                    .coerceIn(0, keyboardCols - 1)
-                                                val row = ((down.position.y / h) * keyboardRows).toInt()
-                                                    .coerceIn(0, keyboardRows - 1)
-                                                val keyIndex = row * keyboardCols + col
-
-                                                val touchedLetter: Char? = if (keyIndex in WordsWorthLogic.ALPHABET.indices) {
-                                                    WordsWorthLogic.ALPHABET[keyIndex]
-                                                } else {
-                                                    null
-                                                }
+                                                val row = ((down.position.y / h) * rows.size).toInt()
+                                                    .coerceIn(0, rows.size - 1)
+                                                val rowKeys = rows[row]
+                                                val col = ((down.position.x / w) * rowKeys.size).toInt()
+                                                    .coerceIn(0, rowKeys.size - 1)
+                                                val touchedLetter: Char? = rowKeys[col]
 
                                                 // Immediately populate the focused cell and advance focus to the next square
                                                 val undoPlacement = currentOnKeyboardInput(touchedLetter)
@@ -1230,15 +1351,13 @@ fun WordsWorthGameScreen(
                                         },
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    for (rowIdx in 0 until keyboardRows) {
+                                    for (rowKeys in keyboardRowsList) {
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
-                                            for (colIdx in 0 until keyboardCols) {
-                                                val keyIndex = rowIdx * keyboardCols + colIdx
-                                                if (keyIndex in WordsWorthLogic.ALPHABET.indices) {
-                                                    val letter = WordsWorthLogic.ALPHABET[keyIndex]
+                                            for (letter in rowKeys) {
+                                                if (letter != null) {
                                                     val value = WordsWorthLogic.letterValue(letter)
                                                     val isSelected = selectedLetter == letter
                                                     LetterRackTile(
@@ -1414,15 +1533,66 @@ fun WordsWorthGameScreen(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ScoreAndWordsColumn(
+    highScoreEntry: SavedGameEntry?,
+    onClickHighScore: (SavedGameEntry) -> Unit,
     tallyResult: TallyResult?,
+    elapsedSecondsProvider: () -> Int,
     onRequestWhitelistWord: (FormedWord) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val highScore = highScoreEntry?.score ?: 0
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Score Box aligned with the top row of squares on the board
+        // High Score Box (tracks highest score across saved games; tapping opens the saved game preview)
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(enabled = highScoreEntry != null) {
+                    highScoreEntry?.let(onClickHighScore)
+                },
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondary
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "HIGH SCORE",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondary.copy(alpha = 0.85f)
+                )
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "$highScore",
+                        fontSize = 30.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onSecondary
+                    )
+                    Text(
+                        text = "pts",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSecondary.copy(alpha = 0.9f),
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
+            }
+        }
+
+        // Score Box
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -1463,6 +1633,9 @@ fun ScoreAndWordsColumn(
                 }
             }
         }
+
+        // Timer Box under Score (same look and feel, distinct color)
+        TimerCard(elapsedSecondsProvider = elapsedSecondsProvider)
 
         // Scrollable list of all words and their values below the score
         Card(
@@ -1703,6 +1876,8 @@ fun SavedBoardThumbnailItem(
 
 @Composable
 fun SettingsScreen(
+    keyboardLayout: KeyboardLayout,
+    onChangeKeyboardLayout: (KeyboardLayout) -> Unit,
     savedGamesCount: Int,
     onClearSavedGames: () -> Unit,
     onBack: () -> Unit
@@ -1716,6 +1891,7 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(16.dp)
+                .verticalScroll(rememberScrollState())
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1748,7 +1924,71 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Saved Boards History",
+                        text = "Keyboard Layout",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Choose how the letter keys are arranged underneath the game board.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        KeyboardLayout.entries.forEach { option ->
+                            val isSelected = keyboardLayout == option
+                            if (isSelected) {
+                                Button(
+                                    onClick = { onChangeKeyboardLayout(option) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary
+                                    )
+                                ) {
+                                    Text(
+                                        text = option.label,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { onChangeKeyboardLayout(option) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text(
+                                        text = option.label,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Previous Games History",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -1767,33 +2007,8 @@ fun SettingsScreen(
                             contentColor = MaterialTheme.colorScheme.error
                         )
                     ) {
-                        Text("Clear Saved Boards History")
+                        Text("Clear Previous Games History")
                     }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                )
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Additional Settings",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "More game preferences and customization options will be added here soon.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
         }

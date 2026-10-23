@@ -7,6 +7,11 @@ enum class WordDirection(val label: String) {
     VERTICAL("Down")
 }
 
+enum class KeyboardLayout(val label: String) {
+    ALPHABETICAL("Alphabetical"),
+    QWERTY("QWERTY")
+}
+
 enum class CellValidation {
     UNCHECKED,
     VALID,
@@ -78,6 +83,43 @@ object WordsWorthLogic {
     )
 
     val ALPHABET: List<Char> = ('A'..'Z').toList()
+
+    val ALPHABETICAL_KEYBOARD_ROWS: List<List<Char?>> = listOf(
+        listOf('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'),
+        listOf('J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'),
+        listOf('S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', null)
+    )
+
+    val QWERTY_KEYBOARD_ROWS: List<List<Char?>> = listOf(
+        listOf('Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'),
+        listOf('A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'),
+        listOf('Z', 'X', 'C', 'V', 'B', 'N', 'M', null)
+    )
+
+    fun keyboardRows(layout: KeyboardLayout): List<List<Char?>> = when (layout) {
+        KeyboardLayout.ALPHABETICAL -> ALPHABETICAL_KEYBOARD_ROWS
+        KeyboardLayout.QWERTY -> QWERTY_KEYBOARD_ROWS
+    }
+
+    private const val PREFS_NAME = "wordsworth_prefs"
+    private const val KEY_KEYBOARD_LAYOUT = "keyboard_layout"
+
+    fun loadKeyboardLayout(context: Context): KeyboardLayout {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val saved = prefs.getString(KEY_KEYBOARD_LAYOUT, KeyboardLayout.ALPHABETICAL.name)
+        return try {
+            KeyboardLayout.valueOf(saved ?: KeyboardLayout.ALPHABETICAL.name)
+        } catch (_: Exception) {
+            KeyboardLayout.ALPHABETICAL
+        }
+    }
+
+    fun saveKeyboardLayout(context: Context, layout: KeyboardLayout) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_KEYBOARD_LAYOUT, layout.name)
+            .apply()
+    }
 
     fun letterValue(ch: Char): Int = LETTER_VALUES[ch.uppercaseChar()] ?: 0
 

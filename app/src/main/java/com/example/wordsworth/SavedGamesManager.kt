@@ -21,12 +21,37 @@ data class SavedGameEntry(
     val elapsedSeconds: Int,
     val timestamp: String,
     val screenshotPath: String,
-    val bitmap: Bitmap?
+    val bitmap: Bitmap?,
+    val board: Array<Array<Char?>>? = null
 )
 
 object SavedGamesManager {
     private const val DIR_NAME = "saved_boards"
     private const val META_FILE = "saved_games.json"
+
+    private fun serializeBoard(board: Array<Array<Char?>>): JSONArray {
+        val rowsArray = JSONArray()
+        for (row in board) {
+            val colsArray = JSONArray()
+            for (cell in row) {
+                colsArray.put(cell?.toString() ?: "")
+            }
+            rowsArray.put(colsArray)
+        }
+        return rowsArray
+    }
+
+    private fun deserializeBoard(rowsArray: JSONArray?): Array<Array<Char?>>? {
+        if (rowsArray == null || rowsArray.length() == 0) return null
+        val size = rowsArray.length()
+        return Array(size) { r ->
+            val colsArray = rowsArray.optJSONArray(r)
+            Array(size) { c ->
+                val str = colsArray?.optString(c, "") ?: ""
+                if (str.isNotEmpty()) str[0] else null
+            }
+        }
+    }
 
     private fun getStorageDir(context: Context): File {
         val dir = File(context.filesDir, DIR_NAME)
@@ -148,7 +173,8 @@ object SavedGamesManager {
         context: Context,
         board: Array<Array<Char?>>,
         tallyResult: TallyResult,
-        elapsedSeconds: Int
+        elapsedSeconds: Int,
+        replaceId: Long? = null
     ): SavedGameEntry {
         val dir = getStorageDir(context)
         val id = System.currentTimeMillis()
@@ -158,6 +184,9 @@ object SavedGamesManager {
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
         }
 
+        val boardCopy = Array(board.size) { r ->
+            Array(board.size) { c -> board[r][c] }
+        }
         val timestamp = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(id))
         val newEntry = SavedGameEntry(
             id = id,
@@ -165,7 +194,8 @@ object SavedGamesManager {
             elapsedSeconds = elapsedSeconds,
             timestamp = timestamp,
             screenshotPath = imageFile.absolutePath,
-            bitmap = bitmap
+            bitmap = bitmap,
+            board = boardCopy
         )
 
         val currentArray = readMetadataArray(context)
@@ -175,13 +205,21 @@ object SavedGamesManager {
             put("elapsedSeconds", newEntry.elapsedSeconds)
             put("timestamp", newEntry.timestamp)
             put("screenshotPath", newEntry.screenshotPath)
+            put("board", serializeBoard(boardCopy))
         }
 
-        // Prepend newest first (or append in order; we'll store in chronological/newest-top order)
         val updatedArray = JSONArray()
         updatedArray.put(newObj)
         for (i in 0 until currentArray.length()) {
-            updatedArray.put(currentArray.getJSONObject(i))
+            val existingObj = currentArray.optJSONObject(i) ?: continue
+            if (replaceId != null && existingObj.optLong("id", -1L) == replaceId) {
+                val oldPath = existingObj.optString("screenshotPath", "")
+                if (oldPath.isNotEmpty() && oldPath != imageFile.absolutePath) {
+                    File(oldPath).delete()
+                }
+            } else {
+                updatedArray.put(existingObj)
+            }
         }
         File(dir, META_FILE).writeText(updatedArray.toString(2))
 
@@ -199,6 +237,7 @@ object SavedGamesManager {
             } else {
                 null
             }
+            val savedBoard = deserializeBoard(obj.optJSONArray("board"))
             result.add(
                 SavedGameEntry(
                     id = obj.optLong("id", 0L),
@@ -206,7 +245,8 @@ object SavedGamesManager {
                     elapsedSeconds = obj.optInt("elapsedSeconds", 0),
                     timestamp = obj.optString("timestamp", ""),
                     screenshotPath = path,
-                    bitmap = bmp
+                    bitmap = bmp,
+                    board = savedBoard
                 )
             )
         }
