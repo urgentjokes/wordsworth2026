@@ -19,8 +19,8 @@ enum class WordDirection(val label: String) {
  * @property label Display name shown in the Settings screen.
  */
 enum class KeyboardLayout(val label: String) {
-    ALPHABETICAL("Alphabetical"),
-    QWERTY("QWERTY")
+    QWERTY("QWERTY"),
+    ALPHABETICAL("Alphabetical")
 }
 
 /**
@@ -132,60 +132,38 @@ object WordsWorthLogic {
     /** Returns true if [ch] represents a blacked-out crossword square ([BLOCKED_CELL]). */
     fun isBlockedCell(ch: Char?): Boolean = ch == BLOCKED_CELL
 
-    /** Point values for each letter tile from A to Z. */
-    val LETTER_VALUES: Map<Char, Int> = mapOf(
-        'A' to 1,
-        'B' to 3,
-        'C' to 3,
-        'D' to 2,
-        'E' to 1,
-        'F' to 4,
-        'G' to 2,
-        'H' to 4,
-        'I' to 1,
-        'J' to 8,
-        'K' to 5,
-        'L' to 2,
-        'M' to 3,
-        'N' to 1,
-        'O' to 1,
-        'P' to 3,
-        'Q' to 10,
-        'R' to 1,
-        'S' to 1,
-        'T' to 1,
-        'U' to 2,
-        'V' to 5,
-        'W' to 4,
-        'X' to 8,
-        'Y' to 1,
-        'Z' to 10
-    )
+    /** Sentinel key identifiers for special Japanese rack tiles. */
+    const val KEY_CLR = "CLR"
+    const val KEY_MODIFIER = "小゛゜"
+    const val KEY_CHOONPU = "ー"
+    const val KEY_SOKUON = KEY_MODIFIER
+    const val KEY_DAKUTEN = KEY_MODIFIER
 
-    val ALPHABET: List<Char> = ('A'..'Z').toList()
+    /** Point values for base Hiragana kana characters. */
+    val LETTER_VALUES: Map<Char, Int> = KanaConverter.KANA_BASE_VALUES
 
     /**
-     * 3x9 alphabetical key matrix (`null` in the bottom-right corner represents the `CLR` key).
+     * 3-row alphabetical Romaji key matrix with Japanese modifier key and chōonpu.
      */
-    val ALPHABETICAL_KEYBOARD_ROWS: List<List<Char?>> = listOf(
-        listOf('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'),
-        listOf('J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'),
-        listOf('S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', null)
+    val ALPHABETICAL_KEYBOARD_ROWS: List<List<String>> = listOf(
+        listOf("A", "B", "C", "D", "E", "F", "G", "H", "I"),
+        listOf("J", "K", "L", "M", "N", "O", "P", "Q", "R", KEY_CHOONPU),
+        listOf(KEY_MODIFIER, "S", "T", "U", "V", "W", "X", "Y", "Z", KEY_CLR)
     )
 
     /**
-     * Standard QWERTY key matrix (`null` in the bottom-right corner represents the `CLR` key).
+     * Standard QWERTY key matrix with Japanese modifier key and chōonpu per J-DESIGN.MD.
      */
-    val QWERTY_KEYBOARD_ROWS: List<List<Char?>> = listOf(
-        listOf('Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'),
-        listOf('A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'),
-        listOf('Z', 'X', 'C', 'V', 'B', 'N', 'M', null)
+    val QWERTY_KEYBOARD_ROWS: List<List<String>> = listOf(
+        listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"),
+        listOf("A", "S", "D", "F", "G", "H", "J", "K", "L", KEY_CHOONPU),
+        listOf(KEY_MODIFIER, "Z", "X", "C", "V", "B", "N", "M", KEY_CLR)
     )
 
     /** Returns the row/column key arrangement for the given [KeyboardLayout]. */
-    fun keyboardRows(layout: KeyboardLayout): List<List<Char?>> = when (layout) {
-        KeyboardLayout.ALPHABETICAL -> ALPHABETICAL_KEYBOARD_ROWS
+    fun keyboardRows(layout: KeyboardLayout): List<List<String>> = when (layout) {
         KeyboardLayout.QWERTY -> QWERTY_KEYBOARD_ROWS
+        KeyboardLayout.ALPHABETICAL -> ALPHABETICAL_KEYBOARD_ROWS
     }
 
     private const val PREFS_NAME = "wordsworth_prefs"
@@ -196,11 +174,11 @@ object WordsWorthLogic {
     /** Loads the user's saved [KeyboardLayout] from SharedPreferences. */
     fun loadKeyboardLayout(context: Context): KeyboardLayout {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val saved = prefs.getString(KEY_KEYBOARD_LAYOUT, KeyboardLayout.ALPHABETICAL.name)
+        val saved = prefs.getString(KEY_KEYBOARD_LAYOUT, KeyboardLayout.QWERTY.name)
         return try {
-            KeyboardLayout.valueOf(saved ?: KeyboardLayout.ALPHABETICAL.name)
+            KeyboardLayout.valueOf(saved ?: KeyboardLayout.QWERTY.name)
         } catch (_: Exception) {
-            KeyboardLayout.ALPHABETICAL
+            KeyboardLayout.QWERTY
         }
     }
 
@@ -249,27 +227,73 @@ object WordsWorthLogic {
             .apply()
     }
 
-    /** Returns the point value for a single character tile (case-insensitive). */
-    fun letterValue(ch: Char): Int = LETTER_VALUES[ch.uppercaseChar()] ?: 0
-
-    /** Returns the total raw point value of all letters in [word]. */
-    fun wordRawScore(word: String): Int = word.sumOf { letterValue(it) }
-
-    private const val WHITELIST_FILE = "whitelisted_words.txt"
+    /** Returns the point value for a single kana character tile. */
+    fun letterValue(ch: Char): Int = KanaConverter.kanaValue(ch)
 
     /**
-     * Loads the base word list from `assets/words.txt` (filtered to 2..[MAX_BOARD_SIZE] letters)
+     * Determines whether the letter at ([r], [c]) on [board] is acting as a Caboose letter.
+     * Per J-DESIGN.MD, kana in the -う column or て/で score 1 point when appearing at the *end*
+     * of a word (and not continuing into another word).
+     */
+    fun isCabooseCell(board: Array<Array<Char?>>, r: Int, c: Int): Boolean {
+        val size = board.size
+        val ch = board.getOrNull(r)?.getOrNull(c) ?: return false
+        if (!isLetterCell(ch)) return false
+        if (ch !in KanaConverter.CABOOSE_KANA) return false
+
+        // Check horizontal relationships (run of >= 2 letters)
+        val hasLeft = c > 0 && isLetterCell(board[r][c - 1])
+        val hasRight = c < size - 1 && isLetterCell(board[r][c + 1])
+        val endsHorizontal = hasLeft && !hasRight
+
+        // Check vertical relationships (run of >= 2 letters)
+        val hasAbove = r > 0 && isLetterCell(board[r - 1][c])
+        val hasBelow = r < size - 1 && isLetterCell(board[r + 1][c])
+        val endsVertical = hasAbove && !hasBelow
+
+        // It is a caboose if it terminates at least one word and does not continue into another word
+        return (endsHorizontal || endsVertical) && !hasRight && !hasBelow
+    }
+
+    /**
+     * Returns the displayed point value for a cell at ([r], [c]) on [board].
+     * If the cell contains a caboose kana at the end of a word (horizontal or vertical),
+     * it evaluates to 1 point per the Caboose Rule; otherwise its intrinsic base kana value.
+     */
+    fun cellDisplayValue(board: Array<Array<Char?>>, r: Int, c: Int): Int {
+        val ch = board.getOrNull(r)?.getOrNull(c) ?: return 0
+        if (!isLetterCell(ch)) return 0
+        val baseVal = letterValue(ch)
+        return if (isCabooseCell(board, r, c)) {
+            minOf(baseVal, 1)
+        } else {
+            baseVal
+        }
+    }
+
+    /** Returns the total raw point value of all letters in [word], applying the Caboose Rule. */
+    fun wordRawScore(word: String): Int = KanaConverter.wordRawScore(word)
+
+    private const val WHITELIST_FILE = "whitelisted_words_ja.txt"
+
+    /**
+     * Loads the Japanese word list from `assets/words_ja.txt` (or fallback `words.txt`)
      * and merges in any custom words added to the user's local whitelist.
      */
     fun loadDictionary(context: Context): Set<String> {
         val baseWords = try {
-            context.assets.open("words.txt").bufferedReader().useLines { lines ->
-                lines.map { it.trim().uppercase() }
+            val stream = try {
+                context.assets.open("words_ja.txt")
+            } catch (_: Exception) {
+                context.assets.open("words.txt")
+            }
+            stream.bufferedReader().useLines { lines ->
+                lines.map { it.trim() }
                     .filter { it.length in 2..MAX_BOARD_SIZE }
                     .toHashSet()
             }
         } catch (_: Exception) {
-            mutableSetOf("SALUTE", "SHOES", "OVERT", "TOT", "ER", "RAVE", "AT", "SALVE", "OR")
+            mutableSetOf("はっけん", "ぬき", "せぬ", "はな", "けむり", "さくら", "にほん")
         }
         baseWords.addAll(loadWhitelist(context))
         return baseWords
@@ -281,7 +305,7 @@ object WordsWorthLogic {
         if (!file.exists()) return emptySet()
         return try {
             file.readLines()
-                .map { it.trim().uppercase() }
+                .map { it.trim() }
                 .filter { it.isNotEmpty() }
                 .toSet()
         } catch (_: Exception) {
@@ -291,7 +315,7 @@ object WordsWorthLogic {
 
     /** Adds [word] to the persistent user whitelist file and returns the updated set. */
     fun addWordToWhitelist(context: Context, word: String): Set<String> {
-        val normalized = word.trim().uppercase()
+        val normalized = word.trim()
         if (normalized.isEmpty()) return loadWhitelist(context)
         val current = loadWhitelist(context).toMutableSet()
         current.add(normalized)
@@ -648,24 +672,25 @@ object WordsWorthLogic {
     }
 
     /**
-     * Populates a sample crossword layout onto a board of the given [size]:
+     * Populates a sample Japanese crossword layout onto a board of the given [size]:
      * ```
-     * SALUTE
-     * H   OR
-     * OVERT
-     * E  A
-     * SALVE
-     *  T E
+     * はっけん  
+     * な む   
+     *   りつみん
+     *     ず 
+     *    ぬき 
+     *       
      * ```
+     * (Across: はっけん [6], りつみん [11], ぬき [13]; Down: はな [2], けむり [12], みずき [10] -> Total 54 pts)
      */
     fun exampleBoard(size: Int = BOARD_SIZE): Array<Array<Char?>> {
         val rows = listOf(
-            "SALUTE",
-            "H   OR",
-            "OVERT ",
-            "E  A  ",
-            "SALVE ",
-            " T E  "
+            "はっけん  ",
+            "な む   ",
+            "  りつみん",
+            "    ず ",
+            "   ぬき ",
+            "      "
         )
         return Array(size) { r ->
             Array(size) { c ->

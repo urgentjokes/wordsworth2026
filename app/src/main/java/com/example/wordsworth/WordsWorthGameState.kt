@@ -1,22 +1,24 @@
 package com.example.wordsworth
 
+import android.app.Application
 import android.content.Context
 import android.view.KeyEvent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -24,15 +26,35 @@ import kotlinx.coroutines.withContext
 /**
  * Centralized state holder for the WordsWorth game session.
  *
- * Separating all game state, cursor navigation, timer management, hardware key handling,
- * and persistence operations into this dedicated class keeps UI composables declarative,
- * focused on presentation, and easy to maintain.
+ * Inherits from [AndroidViewModel] to survive configuration changes (e.g. screen orientation,
+ * theme toggle, multi-window resize) without losing the active board, cursor, timer, or game history.
  */
 @Stable
 class WordsWorthGameState(
-    private val context: Context,
-    private val coroutineScope: CoroutineScope
-) {
+    application: Application
+) : AndroidViewModel(application) {
+    private val context: Context get() = getApplication<Application>().applicationContext
+    private val coroutineScope: CoroutineScope get() = viewModelScope
+
+    init {
+        loadInitialData()
+    }
+
+    private fun loadInitialData() {
+        viewModelScope.launch {
+            val loadedDict = withContext(Dispatchers.IO) {
+                WordsWorthLogic.loadDictionary(context)
+            }
+            val loadedGames = withContext(Dispatchers.IO) {
+                SavedGamesManager.loadSavedGames(context)
+            }
+            dictionary = loadedDict
+            savedGames.clear()
+            savedGames.addAll(loadedGames)
+            isDictionaryLoaded = true
+            tallyResult = evaluateBoard()
+        }
+    }
     // -------------------------------------------------------------------------
     // Navigation & Dictionary State
     // -------------------------------------------------------------------------
@@ -86,11 +108,49 @@ class WordsWorthGameState(
     // Timer & Time Attack State
     // -------------------------------------------------------------------------
 
+    private var timerJob: Job? = null
+
+    private fun startTimerLoop() {
+        if (timerJob?.isActive == true) return
+        timerJob = viewModelScope.launch {
+            while (isTimerRunning) {
+                delay(1000L)
+                elapsedSeconds += 1
+                val limitSeconds = timeAttackMinutes?.times(60)
+                if (limitSeconds != null && elapsedSeconds >= limitSeconds) {
+                    elapsedSeconds = limitSeconds
+                    isTimerRunning = false
+                    isBoardLocked = true
+                    focusedCell = null
+                    if (isDictionaryLoaded) {
+                        tallyResult = evaluateBoard()
+                    }
+                    break
+                }
+            }
+        }
+    }
+
+    private fun stopTimerLoop() {
+        timerJob?.cancel()
+        timerJob = null
+    }
+
     /** Elapsed seconds on the game timer (starts counting when the first letter is placed). */
     var elapsedSeconds by mutableIntStateOf(0)
 
     /** True while the per-second game timer coroutine is actively ticking. */
-    var isTimerRunning by mutableStateOf(false)
+    private val _isTimerRunning = mutableStateOf(false)
+    var isTimerRunning: Boolean
+        get() = _isTimerRunning.value
+        set(value) {
+            _isTimerRunning.value = value
+            if (value) {
+                startTimerLoop()
+            } else {
+                stopTimerLoop()
+            }
+        }
 
     /** Selected Time Attack countdown duration in minutes (`1`, `3`, or `5`), or `null` for untimed mode. */
     var timeAttackMinutes by mutableStateOf<Int?>(null)
@@ -109,8 +169,14 @@ class WordsWorthGameState(
     // Cursor, Input, & Validation State
     // -------------------------------------------------------------------------
 
-    /** Currently highlighted letter tile in the rack (`'A'..'Z'`), or `null` for the `CLR` eraser tile. */
-    var selectedLetter by mutableStateOf<Char?>('S')
+    /** Currently highlighted letter tile in the rack. */
+    var selectedLetter by mutableStateOf<Char?>('K')
+
+    /** Pending uncommitted Romaji keystrokes (e.g., "k" or "ky") waiting for a vowel. */
+    var pendingRomaji by mutableStateOf("")
+
+    /** Cell coordinates of the most recently placed/modified tile, used for toggles after cursor advance. */
+    var lastPlacedCell by mutableStateOf<Pair<Int, Int>?>(null)
 
     /** Coordinates `(row, col)` of the currently focused square on the board. */
     var focusedCell by mutableStateOf<Pair<Int, Int>?>(0 to 0)
@@ -239,6 +305,8 @@ class WordsWorthGameState(
         resumedGameId = null
         validatedWordsHistory.clear()
         isBoardLocked = false
+        pendingRomaji = ""
+        lastPlacedCell = null
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
         tallyResult = null
@@ -254,6 +322,8 @@ class WordsWorthGameState(
         resumedGameId = null
         validatedWordsHistory.clear()
         isBoardLocked = false
+        pendingRomaji = ""
+        lastPlacedCell = null
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
         tallyResult = null
@@ -269,6 +339,8 @@ class WordsWorthGameState(
         resumedGameId = null
         validatedWordsHistory.clear()
         isBoardLocked = false
+        pendingRomaji = ""
+        lastPlacedCell = null
         focusedCell = firstAvailableCell(newBoard)
         focusDirection = WordDirection.HORIZONTAL
         tallyResult = null
@@ -395,6 +467,7 @@ class WordsWorthGameState(
         if (WordsWorthLogic.isBlockedCell(board.getOrNull(row)?.getOrNull(col))) {
             return
         }
+        commitPendingRomaji()
         val current = focusedCell
         if (current != null && current.first == row && current.second == col) {
             focusDirection = if (focusDirection == WordDirection.HORIZONTAL) {
@@ -431,41 +504,177 @@ class WordsWorthGameState(
         }
     }
 
-    /**
-     * Handles a letter or `CLR` (`null`) input from either the on-screen rack or a hardware keyboard.
-     *
-     * @return The modified cell coordinates and its previous character (used to undo touch-down
-     *   placement if the user's touch turns into a drag-and-drop gesture), or `null` if erasing.
-     */
-    fun onKeyboardInput(letter: Char?): Pair<Pair<Int, Int>, Char?>? {
-        if (isBoardLocked) return null
-        selectedLetter = letter
-        val target = focusedCell ?: firstAvailableCell(board) ?: return null
-        val (r, c) = target
-        if (WordsWorthLogic.isBlockedCell(board.getOrNull(r)?.getOrNull(c))) return null
+    fun getNextOpenCell(row: Int, col: Int, direction: WordDirection = focusDirection): Pair<Int, Int>? {
+        val size = board.size
+        return when (direction) {
+            WordDirection.HORIZONTAL -> {
+                val nextC = col + 1
+                if (nextC < size && !WordsWorthLogic.isBlockedCell(board[row][nextC])) {
+                    row to nextC
+                } else null
+            }
+            WordDirection.VERTICAL -> {
+                val nextR = row + 1
+                if (nextR < size && !WordsWorthLogic.isBlockedCell(board[nextR][col])) {
+                    nextR to col
+                } else null
+            }
+        }
+    }
 
-        if (letter != null) {
-            val previousChar = board[r][c]
-            updateCell(r, c, letter)
-            advanceFocusFrom(r, c, focusDirection)
-            return (r to c) to previousChar
-        } else {
-            // Backspace / CLR behavior: clear current square if occupied, else step back one square and clear
-            if (WordsWorthLogic.isLetterCell(board[r][c])) {
-                updateCell(r, c, null)
-                focusedCell = r to c
-            } else {
-                val prevCell = when (focusDirection) {
-                    WordDirection.HORIZONTAL -> if (c > 0) r to (c - 1) else null
-                    WordDirection.VERTICAL -> if (r > 0) (r - 1) to c else null
-                }
-                if (prevCell != null && !WordsWorthLogic.isBlockedCell(board[prevCell.first][prevCell.second])) {
-                    focusedCell = prevCell
-                    updateCell(prevCell.first, prevCell.second, null)
+    /** Commits any pending buffer characters (e.g. pending "n" -> 'ん') when tapping away or validating. */
+    fun commitPendingRomaji() {
+        if (pendingRomaji.isEmpty()) return
+        val target = focusedCell ?: return
+        val (r, c) = target
+        val kanaList = KanaConverter.commitBuffer(pendingRomaji)
+        pendingRomaji = ""
+        if (kanaList.isNotEmpty()) {
+            var currR = r
+            var currC = c
+            for (kana in kanaList) {
+                updateCell(currR, currC, kana)
+                lastPlacedCell = currR to currC
+                val next = getNextOpenCell(currR, currC, focusDirection)
+                if (next != null) {
+                    currR = next.first
+                    currC = next.second
                 }
             }
+            focusedCell = currR to currC
+        }
+    }
+
+    /**
+     * Handles Romaji letter input ('A'..'Z') from hardware or on-screen keyboard.
+     * Automatically converts syllables like "kyaku" -> "き", "ゃ", "く" and double consonants "kk" -> "っ", "k".
+     */
+    fun onRomajiKeyInput(keyChar: Char) {
+        if (isBoardLocked) return
+        selectedLetter = keyChar.uppercaseChar()
+        val start = focusedCell ?: firstAvailableCell(board) ?: return
+        val (r, c) = start
+        if (WordsWorthLogic.isBlockedCell(board.getOrNull(r)?.getOrNull(c))) return
+
+        val feedResult = KanaConverter.feedRomaji(pendingRomaji, keyChar)
+        pendingRomaji = feedResult.remainingBuffer
+
+        if (feedResult.producedKana.isNotEmpty()) {
+            var currR = r
+            var currC = c
+            for (kana in feedResult.producedKana) {
+                updateCell(currR, currC, kana)
+                lastPlacedCell = currR to currC
+                val next = getNextOpenCell(currR, currC, focusDirection)
+                if (next != null) {
+                    currR = next.first
+                    currC = next.second
+                }
+            }
+            focusedCell = currR to currC
+        }
+    }
+
+    /**
+     * Handles tapping the '小・゛・゜' modifier key:
+     * - Cycles the character through small, voiced (dakuten), and semi-voiced (handakuten) variants.
+     * - Applies to the focused cell if occupied, or the cell placed just prior, or places 'っ'.
+     */
+    fun onModifierKeyInput() {
+        if (isBoardLocked) return
+        if (pendingRomaji.isNotEmpty()) {
+            commitPendingRomaji()
+        }
+        val target = focusedCell ?: return
+        val (r, c) = target
+        val currentCh = board[r][c]
+        if (currentCh != null && WordsWorthLogic.isLetterCell(currentCh)) {
+            val modified = KanaConverter.cycleModifier(currentCh)
+            updateCell(r, c, modified)
+        } else {
+            val last = lastPlacedCell
+            if (last != null && WordsWorthLogic.isLetterCell(board[last.first][last.second])) {
+                val modified = KanaConverter.cycleModifier(board[last.first][last.second]!!)
+                updateCell(last.first, last.second, modified)
+            } else {
+                updateCell(r, c, 'っ')
+                lastPlacedCell = r to c
+                advanceFocusFrom(r, c, focusDirection)
+            }
+        }
+    }
+
+    fun onSmallKeyInput() = onModifierKeyInput()
+    fun onVoicingKeyInput() = onModifierKeyInput()
+
+    /**
+     * Erases pending buffer or current cell, or steps back and erases.
+     */
+    fun onClearInput() {
+        if (isBoardLocked) return
+        if (pendingRomaji.isNotEmpty()) {
+            pendingRomaji = pendingRomaji.dropLast(1)
+            return
+        }
+        val target = focusedCell ?: firstAvailableCell(board) ?: return
+        val (r, c) = target
+        if (WordsWorthLogic.isLetterCell(board[r][c])) {
+            updateCell(r, c, null)
+            focusedCell = r to c
+        } else {
+            val prevCell = when (focusDirection) {
+                WordDirection.HORIZONTAL -> if (c > 0) r to (c - 1) else null
+                WordDirection.VERTICAL -> if (r > 0) (r - 1) to c else null
+            }
+            if (prevCell != null && !WordsWorthLogic.isBlockedCell(board[prevCell.first][prevCell.second])) {
+                focusedCell = prevCell
+                updateCell(prevCell.first, prevCell.second, null)
+            }
+        }
+    }
+
+    /**
+     * Dispatches any rack key tap (letter or special modifier).
+     */
+    fun onKeyAction(key: String) {
+        when (key) {
+            WordsWorthLogic.KEY_CLR -> onClearInput()
+            WordsWorthLogic.KEY_MODIFIER, "小", "゛゜" -> onModifierKeyInput()
+            else -> {
+                if (key.length == 1) {
+                    val ch = key[0]
+                    if (ch in 'A'..'Z' || ch in 'a'..'z') {
+                        onRomajiKeyInput(ch)
+                    } else {
+                        val target = focusedCell ?: firstAvailableCell(board) ?: return
+                        updateCell(target.first, target.second, ch)
+                        lastPlacedCell = target
+                        advanceFocusFrom(target.first, target.second, focusDirection)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Handles a letter or `CLR` (`null`) input from either the on-screen rack or a hardware keyboard.
+     */
+    fun onKeyboardInput(letter: Char?): Pair<Pair<Int, Int>, Char?>? {
+        if (letter == null) {
+            onClearInput()
             return null
         }
+        if (letter in 'A'..'Z' || letter in 'a'..'z') {
+            onRomajiKeyInput(letter)
+            return null
+        }
+        val target = focusedCell ?: firstAvailableCell(board) ?: return null
+        val (r, c) = target
+        val old = board[r][c]
+        updateCell(r, c, letter)
+        lastPlacedCell = r to c
+        advanceFocusFrom(r, c, focusDirection)
+        return (r to c) to old
     }
 
     /**
@@ -534,6 +743,8 @@ class WordsWorthGameState(
 
         val code = event.keyCode
         val isHandledKey = code in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z ||
+            code == KeyEvent.KEYCODE_MINUS ||
+            code == KeyEvent.KEYCODE_NUMPAD_SUBTRACT ||
             code == KeyEvent.KEYCODE_DEL ||
             code == KeyEvent.KEYCODE_FORWARD_DEL ||
             code == KeyEvent.KEYCODE_SPACE ||
@@ -553,13 +764,18 @@ class WordsWorthGameState(
             when {
                 code in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> {
                     val letter = ('A'.code + (code - KeyEvent.KEYCODE_A)).toChar()
-                    onKeyboardInput(letter)
+                    onRomajiKeyInput(letter)
+                }
+                code == KeyEvent.KEYCODE_MINUS || code == KeyEvent.KEYCODE_NUMPAD_SUBTRACT -> {
+                    onRomajiKeyInput('-')
                 }
                 code == KeyEvent.KEYCODE_DEL || code == KeyEvent.KEYCODE_FORWARD_DEL -> {
-                    onKeyboardInput(null)
+                    onClearInput()
                 }
                 code == KeyEvent.KEYCODE_SPACE || code == KeyEvent.KEYCODE_TAB -> {
-                    if (!isBoardLocked) {
+                    if (pendingRomaji.isNotEmpty()) {
+                        commitPendingRomaji()
+                    } else if (!isBoardLocked) {
                         focusDirection = if (focusDirection == WordDirection.HORIZONTAL) {
                             WordDirection.VERTICAL
                         } else {
@@ -568,18 +784,23 @@ class WordsWorthGameState(
                     }
                 }
                 code == KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    commitPendingRomaji()
                     moveFocusByArrow(0, -1, WordDirection.HORIZONTAL)
                 }
                 code == KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    commitPendingRomaji()
                     moveFocusByArrow(0, 1, WordDirection.HORIZONTAL)
                 }
                 code == KeyEvent.KEYCODE_DPAD_UP -> {
+                    commitPendingRomaji()
                     moveFocusByArrow(-1, 0, WordDirection.VERTICAL)
                 }
                 code == KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    commitPendingRomaji()
                     moveFocusByArrow(1, 0, WordDirection.VERTICAL)
                 }
                 code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                    commitPendingRomaji()
                     if (isDictionaryLoaded) {
                         tallyResult = evaluateBoard()
                     }
@@ -734,48 +955,13 @@ class WordsWorthGameState(
 }
 
 /**
- * Creates and remembers a [WordsWorthGameState] instance, wiring up asynchronous dictionary/history
- * loading, the per-second timer coroutine, and hardware keyboard event dispatch on [MainActivity].
+ * Retrieves the configuration-safe [WordsWorthGameState] ViewModel instance and registers
+ * hardware keyboard event dispatch with [MainActivity].
  */
 @Composable
 fun rememberWordsWorthGameState(): WordsWorthGameState {
+    val state: WordsWorthGameState = viewModel()
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val state = remember(context, coroutineScope) {
-        WordsWorthGameState(context, coroutineScope)
-    }
-
-    // Load dictionary and saved games on startup
-    LaunchedEffect(state) {
-        val loadedDict = withContext(Dispatchers.IO) {
-            WordsWorthLogic.loadDictionary(context)
-        }
-        val loadedGames = withContext(Dispatchers.IO) {
-            SavedGamesManager.loadSavedGames(context)
-        }
-        state.dictionary = loadedDict
-        state.savedGames.clear()
-        state.savedGames.addAll(loadedGames)
-        state.isDictionaryLoaded = true
-    }
-
-    // Per-second game timer & Time Attack countdown expiration handler
-    LaunchedEffect(state.isTimerRunning, state.timeAttackMinutes) {
-        while (state.isTimerRunning) {
-            delay(1000L)
-            state.elapsedSeconds += 1
-            val limitSeconds = state.timeAttackMinutes?.times(60)
-            if (limitSeconds != null && state.elapsedSeconds >= limitSeconds) {
-                state.elapsedSeconds = limitSeconds
-                state.isTimerRunning = false
-                state.isBoardLocked = true
-                state.focusedCell = null
-                if (state.isDictionaryLoaded) {
-                    state.tallyResult = state.evaluateBoard()
-                }
-            }
-        }
-    }
 
     // Register hardware/Bluetooth keyboard handler with the hosting MainActivity
     val latestKeyHandler by rememberUpdatedState<(KeyEvent) -> Boolean> { event ->

@@ -241,7 +241,7 @@ object SavedGamesManager {
                     canvas.drawText(letterChar.toString(), centerX, centerY, letterPaint)
 
                     valuePaint.color = textColor
-                    val pts = WordsWorthLogic.letterValue(letterChar).toString()
+                    val pts = WordsWorthLogic.cellDisplayValue(board, r, c).toString()
                     val inset = (cellSize * 0.08f).coerceAtLeast(2f)
                     canvas.drawText(
                         pts,

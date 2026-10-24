@@ -110,7 +110,9 @@ fun WordsWorthGameScreen(
     onOpenSettings: () -> Unit,
     savedGames: List<SavedGameEntry>,
     onClickSavedGame: (SavedGameEntry) -> Unit,
-    onDeleteSavedGame: (SavedGameEntry) -> Unit
+    onDeleteSavedGame: (SavedGameEntry) -> Unit,
+    pendingRomaji: String = "",
+    onKeyAction: (String) -> Unit = {}
 ) {
     // Cached thumbnails for the "All-blank" and "Random pattern" option buttons
     val allBlankThumb = remember {
@@ -256,7 +258,8 @@ fun WordsWorthGameScreen(
                                     onGridBoundsChanged = { gridBoundsInRoot = it },
                                     onBoardCellTap = onBoardCellTap,
                                     onClearCell = { r, c -> onUpdateCell(r, c, null) },
-                                    isCompact = true
+                                    isCompact = true,
+                                    pendingRomaji = pendingRomaji
                                 )
                             }
 
@@ -285,6 +288,7 @@ fun WordsWorthGameScreen(
                                 dragThresholdPx = dragThresholdPx,
                                 onKeyboardOriginChanged = { keyboardOriginInRoot = it },
                                 onKeyboardInput = onKeyboardInput,
+                                onKeyAction = onKeyAction,
                                 onDragStart = { letter, localPos ->
                                     draggingLetter = letter
                                     dragPositionInRoot = keyboardOriginInRoot + localPos
@@ -386,7 +390,8 @@ fun WordsWorthGameScreen(
                                     onGridBoundsChanged = { gridBoundsInRoot = it },
                                     onBoardCellTap = onBoardCellTap,
                                     onClearCell = { r, c -> onUpdateCell(r, c, null) },
-                                    isCompact = true
+                                    isCompact = true,
+                                    pendingRomaji = pendingRomaji
                                 )
                             }
 
@@ -430,6 +435,7 @@ fun WordsWorthGameScreen(
                                     dragThresholdPx = dragThresholdPx,
                                     onKeyboardOriginChanged = { keyboardOriginInRoot = it },
                                     onKeyboardInput = onKeyboardInput,
+                                    onKeyAction = onKeyAction,
                                     onDragStart = { letter, localPos ->
                                         draggingLetter = letter
                                         dragPositionInRoot = keyboardOriginInRoot + localPos
@@ -545,7 +551,8 @@ fun WordsWorthGameScreen(
                                         cellSpacing = cellSpacing,
                                         onGridBoundsChanged = { gridBoundsInRoot = it },
                                         onBoardCellTap = onBoardCellTap,
-                                        onClearCell = { r, c -> onUpdateCell(r, c, null) }
+                                        onClearCell = { r, c -> onUpdateCell(r, c, null) },
+                                        pendingRomaji = pendingRomaji
                                     )
 
                                     Spacer(modifier = Modifier.height(6.dp))
@@ -575,6 +582,7 @@ fun WordsWorthGameScreen(
                                         dragThresholdPx = dragThresholdPx,
                                         onKeyboardOriginChanged = { keyboardOriginInRoot = it },
                                         onKeyboardInput = onKeyboardInput,
+                                        onKeyAction = onKeyAction,
                                         onDragStart = { letter, localPos ->
                                             draggingLetter = letter
                                             dragPositionInRoot = keyboardOriginInRoot + localPos
@@ -702,7 +710,8 @@ fun WordsWorthGameScreen(
                                         cellSpacing = cellSpacing,
                                         onGridBoundsChanged = { gridBoundsInRoot = it },
                                         onBoardCellTap = onBoardCellTap,
-                                        onClearCell = { r, c -> onUpdateCell(r, c, null) }
+                                        onClearCell = { r, c -> onUpdateCell(r, c, null) },
+                                        pendingRomaji = pendingRomaji
                                     )
 
                                     Spacer(modifier = Modifier.height(6.dp))
@@ -732,6 +741,7 @@ fun WordsWorthGameScreen(
                                         dragThresholdPx = dragThresholdPx,
                                         onKeyboardOriginChanged = { keyboardOriginInRoot = it },
                                         onKeyboardInput = onKeyboardInput,
+                                        onKeyAction = onKeyAction,
                                         onDragStart = { letter, localPos ->
                                             draggingLetter = letter
                                             dragPositionInRoot = keyboardOriginInRoot + localPos
@@ -869,7 +879,7 @@ private fun WordsWorthTopBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "WordsWorth",
+            text = "WordsWorth-J",
             fontSize = if (isCompact) 19.sp else 22.sp,
             fontWeight = FontWeight.ExtraBold,
             color = MaterialTheme.colorScheme.primary

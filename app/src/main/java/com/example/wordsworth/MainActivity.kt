@@ -101,7 +101,9 @@ fun WordsWorthApp() {
             onClickSavedGame = gameState::resumeSavedGame,
             onDeleteSavedGame = { entry ->
                 gameState.pendingDeleteEntry = entry
-            }
+            },
+            pendingRomaji = gameState.pendingRomaji,
+            onKeyAction = gameState::onKeyAction
         )
     }
 
