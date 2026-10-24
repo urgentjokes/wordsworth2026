@@ -66,9 +66,16 @@ class WordsWorthGameState(
     var scoringMode by mutableStateOf(WordsWorthLogic.loadScoringMode(context))
 
     /**
+     * Whether placing the same valid word more than once on the board awards points after
+     * the first instance (`true` = points every time, `false` = points only the first time).
+     */
+    var allowDuplicateWordPoints by mutableStateOf(WordsWorthLogic.loadAllowDuplicateWordPoints(context))
+
+    /**
      * Validated words recorded earlier in the current game session.
      * Used when [scoringMode] is [ScoringMode.CUMULATIVE_EXTENDED] so extending a previously
-     * validated word (e.g., `SOUND` -> `SOUNDLY`) retains the base word's points.
+     * validated word (e.g., `SOUND` -> `SOUNDLY`) retains the base word's points, and when
+     * [allowDuplicateWordPoints] is `false` to identify which duplicate instance was placed first.
      */
     val validatedWordsHistory = mutableStateListOf<FormedWord>()
 
@@ -176,13 +183,15 @@ class WordsWorthGameState(
     }
 
     /**
-     * Evaluates [targetBoard] against [targetDict] using [targetMode], pruning any previously
-     * validated words whose letters were modified/erased and recording newly validated words.
+     * Evaluates [targetBoard] against [targetDict] using [targetMode] and [targetAllowDuplicates],
+     * pruning any previously validated words whose letters were modified/erased and recording newly
+     * validated words.
      */
     fun evaluateBoard(
         targetBoard: Array<Array<Char?>> = board,
         targetDict: Set<String> = dictionary,
-        targetMode: ScoringMode = scoringMode
+        targetMode: ScoringMode = scoringMode,
+        targetAllowDuplicates: Boolean = allowDuplicateWordPoints
     ): TallyResult {
         val size = targetBoard.size
         // Prune any historical word whose cells no longer hold its original letters
@@ -197,9 +206,10 @@ class WordsWorthGameState(
             board = targetBoard,
             dictionary = targetDict,
             scoringMode = targetMode,
-            previouslyValidatedWords = validatedWordsHistory
+            previouslyValidatedWords = validatedWordsHistory,
+            allowDuplicateWordPoints = targetAllowDuplicates
         )
-        // Record all currently valid words into session history for future extensions
+        // Record all currently valid words into session history for future extensions / duplicate ordering
         for (fw in result.validWords) {
             val exists = validatedWordsHistory.any {
                 it.direction == fw.direction &&
@@ -646,7 +656,19 @@ class WordsWorthGameState(
         scoringMode = newMode
         WordsWorthLogic.saveScoringMode(context, newMode)
         if (tallyResult != null && isDictionaryLoaded) {
-            tallyResult = evaluateBoard(board, dictionary, newMode)
+            tallyResult = evaluateBoard(board, dictionary, newMode, allowDuplicateWordPoints)
+        }
+    }
+
+    /**
+     * Updates whether duplicate instances of the same valid word receive points after the first time,
+     * saves the preference, and immediately recomputes [tallyResult] if a validated board is displayed.
+     */
+    fun changeAllowDuplicateWordPoints(allow: Boolean) {
+        allowDuplicateWordPoints = allow
+        WordsWorthLogic.saveAllowDuplicateWordPoints(context, allow)
+        if (tallyResult != null && isDictionaryLoaded) {
+            tallyResult = evaluateBoard(board, dictionary, scoringMode, allow)
         }
     }
 

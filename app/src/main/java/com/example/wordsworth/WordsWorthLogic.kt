@@ -67,6 +67,8 @@ enum class CellValidation {
  * @property cells Ordered list of `(row, col)` coordinates occupied by the word's letters.
  * @property rawPoints Sum of individual tile point values in [word], regardless of validity.
  * @property isValid True if [word] exists in the loaded dictionary or user whitelist.
+ * @property isDuplicateUnscored True when [word] is valid on the board but earns 0 points because
+ *   an earlier instance of the same word is already scored and duplicate word scoring is disabled.
  */
 data class FormedWord(
     val word: String,
@@ -75,11 +77,12 @@ data class FormedWord(
     val startCol: Int,
     val cells: List<Pair<Int, Int>>,
     val rawPoints: Int,
-    val isValid: Boolean
+    val isValid: Boolean,
+    val isDuplicateUnscored: Boolean = false
 ) {
-    /** Points awarded toward the player's score (0 if the word is invalid). */
+    /** Points awarded toward the player's score (0 if the word is invalid or an unscored duplicate). */
     val awardedPoints: Int
-        get() = if (isValid) rawPoints else 0
+        get() = if (isValid && !isDuplicateUnscored) rawPoints else 0
 }
 
 /**
@@ -188,6 +191,7 @@ object WordsWorthLogic {
     private const val PREFS_NAME = "wordsworth_prefs"
     private const val KEY_KEYBOARD_LAYOUT = "keyboard_layout"
     private const val KEY_SCORING_MODE = "scoring_mode"
+    private const val KEY_ALLOW_DUPLICATE_WORD_POINTS = "allow_duplicate_word_points"
 
     /** Loads the user's saved [KeyboardLayout] from SharedPreferences. */
     fun loadKeyboardLayout(context: Context): KeyboardLayout {
@@ -224,6 +228,24 @@ object WordsWorthLogic {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_SCORING_MODE, mode.name)
+            .apply()
+    }
+
+    /**
+     * Loads whether placing the same valid word more than once awards points after the first time.
+     */
+    fun loadAllowDuplicateWordPoints(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_ALLOW_DUPLICATE_WORD_POINTS, true)
+    }
+
+    /**
+     * Persists whether placing the same valid word more than once awards points after the first time.
+     */
+    fun saveAllowDuplicateWordPoints(context: Context, allow: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_ALLOW_DUPLICATE_WORD_POINTS, allow)
             .apply()
     }
 
@@ -411,15 +433,20 @@ object WordsWorthLogic {
      * contiguous letter sequences of length >= 2, validates them against [dictionary],
      * and computes the total score and per-cell validation states.
      *
-     * When [scoringMode] is [ScoringMode.CUMULATIVE_EXTENDED], any word in [previouslyValidatedWords]
-     * whose letters remain intact inside a longer valid word in the same direction is retained
-     * in the returned [TallyResult.words] and counted toward [TallyResult.totalScore].
+     * - When [scoringMode] is [ScoringMode.CUMULATIVE_EXTENDED], any word in [previouslyValidatedWords]
+     *   whose letters remain intact inside a longer valid word in the same direction is retained
+     *   in the returned [TallyResult.words] and counted toward [TallyResult.totalScore].
+     * - When [allowDuplicateWordPoints] is `false`, placing the same valid word multiple times on
+     *   the board remains valid (green on the board), but only the first occurrence of each word
+     *   receives points; subsequent occurrences have [FormedWord.isDuplicateUnscored] set to `true`
+     *   and award `0` points.
      */
     fun tallyBoard(
         board: Array<Array<Char?>>,
         dictionary: Set<String>,
         scoringMode: ScoringMode = ScoringMode.EXTENDED_DIFF_ONLY,
-        previouslyValidatedWords: Collection<FormedWord> = emptyList()
+        previouslyValidatedWords: Collection<FormedWord> = emptyList(),
+        allowDuplicateWordPoints: Boolean = true
     ): TallyResult {
         val size = board.size
         val foundWords = mutableListOf<FormedWord>()
@@ -527,7 +554,7 @@ object WordsWorthLogic {
         }
 
         // 4. Combine retained base words if CUMULATIVE_EXTENDED scoring mode is active
-        val allScoredWords = if (scoringMode == ScoringMode.CUMULATIVE_EXTENDED && previouslyValidatedWords.isNotEmpty()) {
+        val combinedWords = if (scoringMode == ScoringMode.CUMULATIVE_EXTENDED && previouslyValidatedWords.isNotEmpty()) {
             val combined = mutableListOf<FormedWord>()
             val seenKeys = HashSet<String>()
             for (curr in foundWords) {
@@ -553,7 +580,8 @@ object WordsWorthLogic {
                             combined.add(
                                 baseWord.copy(
                                     rawPoints = wordRawScore(baseWord.word),
-                                    isValid = true
+                                    isValid = true,
+                                    isDuplicateUnscored = false
                                 )
                             )
                         }
@@ -567,6 +595,46 @@ object WordsWorthLogic {
             combined
         } else {
             foundWords
+        }
+
+        // 5. Apply duplicate-word scoring rule when allowDuplicateWordPoints == false:
+        //    Only the first validated instance of each word receives points; additional instances
+        //    remain valid on the board but receive 0 points (isDuplicateUnscored = true).
+        val allScoredWords = if (!allowDuplicateWordPoints) {
+            fun instanceKey(fw: FormedWord) = "${fw.direction}_${fw.startRow}_${fw.startCol}_${fw.word}"
+
+            val validByWord = combinedWords.filter { it.isValid }.groupBy { it.word }
+            val primaryKeyByWord = HashMap<String, String>()
+
+            for ((wordText, instances) in validByWord) {
+                if (instances.size == 1) {
+                    primaryKeyByWord[wordText] = instanceKey(instances[0])
+                } else {
+                    val instanceKeys = instances.map { instanceKey(it) }.toSet()
+                    // Prefer whichever current instance was validated earliest during this game
+                    val earliestHistorical = previouslyValidatedWords.firstOrNull { prev ->
+                        prev.word == wordText && instanceKey(prev) in instanceKeys
+                    }
+                    primaryKeyByWord[wordText] = if (earliestHistorical != null) {
+                        instanceKey(earliestHistorical)
+                    } else {
+                        instanceKey(instances[0])
+                    }
+                }
+            }
+
+            combinedWords.map { fw ->
+                if (!fw.isValid) {
+                    fw
+                } else {
+                    val isPrimary = primaryKeyByWord[fw.word] == instanceKey(fw)
+                    fw.copy(isDuplicateUnscored = !isPrimary)
+                }
+            }
+        } else {
+            combinedWords.map { fw ->
+                if (fw.isDuplicateUnscored) fw.copy(isDuplicateUnscored = false) else fw
+            }
         }
 
         val totalScore = allScoredWords.sumOf { it.awardedPoints }

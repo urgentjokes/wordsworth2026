@@ -54,6 +54,8 @@ fun WordsWorthApp() {
             onChangeKeyboardLayout = gameState::changeKeyboardLayout,
             scoringMode = gameState.scoringMode,
             onChangeScoringMode = gameState::changeScoringMode,
+            allowDuplicateWordPoints = gameState.allowDuplicateWordPoints,
+            onChangeAllowDuplicateWordPoints = gameState::changeAllowDuplicateWordPoints,
             savedGamesCount = gameState.savedGames.size,
             onClearSavedGames = gameState::clearAllSavedGames,
             onBack = { gameState.showSettingsScreen = false }

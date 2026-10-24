@@ -83,6 +83,7 @@ fun WordsWorthDialogs(gameState: WordsWorthGameState) {
             gameState.board,
             gameState.dictionary,
             gameState.scoringMode,
+            gameState.allowDuplicateWordPoints,
             gameState.validatedWordsHistory.size
         ) {
             if (gameState.isDictionaryLoaded) {
@@ -90,7 +91,8 @@ fun WordsWorthDialogs(gameState: WordsWorthGameState) {
                     board = gameState.board,
                     dictionary = gameState.dictionary,
                     scoringMode = gameState.scoringMode,
-                    previouslyValidatedWords = gameState.validatedWordsHistory
+                    previouslyValidatedWords = gameState.validatedWordsHistory,
+                    allowDuplicateWordPoints = gameState.allowDuplicateWordPoints
                 ).totalScore
             } else {
                 0

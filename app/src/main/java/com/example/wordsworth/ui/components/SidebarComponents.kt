@@ -637,10 +637,10 @@ private fun FormedWordItemRow(
                     color = textColor
                 )
                 Text(
-                    text = if (fw.isValid) {
-                        fw.direction.label
-                    } else {
-                        "${fw.direction.label} • Hold to allow"
+                    text = when {
+                        !fw.isValid -> "${fw.direction.label} • Hold to allow"
+                        fw.isDuplicateUnscored -> "${fw.direction.label} • Duplicate (0 pts)"
+                        else -> fw.direction.label
                     },
                     fontSize = 10.sp,
                     color = textColor.copy(alpha = 0.8f)

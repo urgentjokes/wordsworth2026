@@ -43,7 +43,9 @@ import com.example.wordsworth.ScoringMode
  * 1. **Keyboard Layout**: Toggle between [KeyboardLayout.ALPHABETICAL] and [KeyboardLayout.QWERTY].
  * 2. **Extended Word Scoring**: Toggle between [ScoringMode.EXTENDED_DIFF_ONLY] ("New Letters Only")
  *    and [ScoringMode.CUMULATIVE_EXTENDED] ("Keep Base Word Points").
- * 3. **Previous Games History**: Clear all saved game entries and screenshots from disk.
+ * 3. **Duplicate Word Scoring**: Toggle whether placing the same valid word more than once awards
+ *    points every time or only the first time it is used.
+ * 4. **Previous Games History**: Clear all saved game entries and screenshots from disk.
  */
 @Composable
 fun SettingsScreen(
@@ -51,6 +53,8 @@ fun SettingsScreen(
     onChangeKeyboardLayout: (KeyboardLayout) -> Unit,
     scoringMode: ScoringMode,
     onChangeScoringMode: (ScoringMode) -> Unit,
+    allowDuplicateWordPoints: Boolean,
+    onChangeAllowDuplicateWordPoints: (Boolean) -> Unit,
     savedGamesCount: Int,
     onClearSavedGames: () -> Unit,
     onBack: () -> Unit
@@ -232,7 +236,83 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 3. Previous Games History Card
+                // 3. Duplicate Word Scoring Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Receive points more than once for the same word?",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (allowDuplicateWordPoints) {
+                                "Placing the same valid word multiple times awards points for every instance."
+                            } else {
+                                "You can place the same valid word more than once, but you only get points the first time you use it."
+                            },
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            listOf(
+                                true to "Yes (Every Time)",
+                                false to "No (First Time Only)"
+                            ).forEach { (optionValue, optionLabel) ->
+                                val isSelected = allowDuplicateWordPoints == optionValue
+                                if (isSelected) {
+                                    Button(
+                                        onClick = { onChangeAllowDuplicateWordPoints(optionValue) },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary
+                                        )
+                                    ) {
+                                        Text(
+                                            text = optionLabel,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { onChangeAllowDuplicateWordPoints(optionValue) },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+                                    ) {
+                                        Text(
+                                            text = optionLabel,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 4. Previous Games History Card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
