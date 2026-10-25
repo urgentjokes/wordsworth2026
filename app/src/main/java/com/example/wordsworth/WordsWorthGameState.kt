@@ -125,8 +125,8 @@ class WordsWorthGameState(
     val validatedWordsHistory = mutableStateListOf<FormedWord>()
 
     // Preserved boards and elapsed time per language to prevent loss when toggling languages
-    private var boardEn: Array<Array<Char?>> = WordsWorthLogic.exampleBoard(WordsWorthLogic.BOARD_SIZE, GameLanguage.ENGLISH)
-    private var boardJa: Array<Array<Char?>> = WordsWorthLogic.exampleBoard(WordsWorthLogic.BOARD_SIZE, GameLanguage.JAPANESE)
+    private var boardEn: Array<Array<Char?>> = WordsWorthLogic.createBlankBoard(WordsWorthLogic.BOARD_SIZE)
+    private var boardJa: Array<Array<Char?>> = WordsWorthLogic.createBlankBoard(WordsWorthLogic.BOARD_SIZE)
     private var elapsedSecondsEn: Int = 0
     private var elapsedSecondsJa: Int = 0
     private val validatedWordsHistoryEn = mutableListOf<FormedWord>()

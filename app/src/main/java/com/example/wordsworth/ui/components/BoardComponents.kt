@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -92,51 +93,32 @@ fun CrosswordBoardGrid(
                 onGridBoundsChanged(coords.boundsInRoot())
             }
             .pointerInput(Unit) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    down.consume()
+                detectTapGestures(
+                    onTap = { offset ->
+                        val size = currentBoardSize
+                        val w = this.size.width.coerceAtLeast(1)
+                        val h = this.size.height.coerceAtLeast(1)
+                        val col = ((offset.x / w) * size).toInt().coerceIn(0, size - 1)
+                        val row = ((offset.y / h) * size).toInt().coerceIn(0, size - 1)
 
-                    val size = currentBoardSize
-                    val w = this.size.width.coerceAtLeast(1)
-                    val h = this.size.height.coerceAtLeast(1)
-                    val col = ((down.position.x / w) * size).toInt().coerceIn(0, size - 1)
-                    val row = ((down.position.y / h) * size).toInt().coerceIn(0, size - 1)
-
-                    val boardSnap = currentBoard
-                    val cellChar = boardSnap.getOrNull(row)?.getOrNull(col)
-                    if (!WordsWorthLogic.isBlockedCell(cellChar)) {
-                        val hadLetterInitially = WordsWorthLogic.isLetterCell(cellChar)
-                        // Immediately focus the tapped square (or toggle Across/Down if already focused)
-                        currentOnBoardCellTap(row, col)
-
-                        // Support press-and-hold on an existing letter square to clear it
-                        var upOrCancel: PointerInputChange? = null
-                        try {
-                            upOrCancel = withTimeout(viewConfiguration.longPressTimeoutMillis) {
-                                waitForUpOrCancellation()
-                            }
-                        } catch (_: PointerEventTimeoutCancellationException) {
-                            if (hadLetterInitially) {
-                                currentOnClearCell(row, col)
-                            }
+                        val cellChar = currentBoard.getOrNull(row)?.getOrNull(col)
+                        if (!WordsWorthLogic.isBlockedCell(cellChar)) {
+                            currentOnBoardCellTap(row, col)
                         }
+                    },
+                    onLongPress = { offset ->
+                        val size = currentBoardSize
+                        val w = this.size.width.coerceAtLeast(1)
+                        val h = this.size.height.coerceAtLeast(1)
+                        val col = ((offset.x / w) * size).toInt().coerceIn(0, size - 1)
+                        val row = ((offset.y / h) * size).toInt().coerceIn(0, size - 1)
 
-                        if (upOrCancel == null) {
-                            do {
-                                val event = awaitPointerEvent()
-                                event.changes.forEach { it.consume() }
-                            } while (event.changes.any { it.pressed })
-                        } else {
-                            upOrCancel.consume()
+                        val cellChar = currentBoard.getOrNull(row)?.getOrNull(col)
+                        if (WordsWorthLogic.isLetterCell(cellChar)) {
+                            currentOnClearCell(row, col)
                         }
-                    } else {
-                        // Consume pointer events on blacked-out squares without moving the cursor
-                        do {
-                            val event = awaitPointerEvent()
-                            event.changes.forEach { it.consume() }
-                        } while (event.changes.any { it.pressed })
                     }
-                }
+                )
             }
     ) {
         Column(
@@ -379,7 +361,6 @@ fun TileKeyboardRack(
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
-                        down.consume()
 
                         val rows = currentKeyboardRows
                         val w = this.size.width.coerceAtLeast(1)
@@ -402,35 +383,33 @@ fun TileKeyboardRack(
                             }
                         }
 
-                        if (currentOnKeyAction != null) {
-                            currentOnKeyAction?.invoke(touchedKey)
-                        } else {
-                            if (touchedKey == WordsWorthLogic.KEY_CLR) {
-                                currentOnKeyboardInput(null)
-                            } else if (touchedKey.length == 1) {
-                                currentOnKeyboardInput(touchedKey[0])
-                            }
-                        }
-
                         val touchedChar: Char? = if (touchedKey.length == 1) touchedKey[0] else null
 
                         var isDragging = false
+                        var isScrolling = false
                         var lastPos = down.position
+                        val touchSlop = viewConfiguration.touchSlop
+
                         do {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == down.id }
                                 ?: event.changes.firstOrNull()
                             if (change != null) {
-                                change.consume()
                                 lastPos = change.position
-                                if (!currentIsBoardLocked &&
-                                    touchedChar != null &&
-                                    !isDragging &&
-                                    (lastPos - down.position).getDistance() > dragThresholdPx
-                                ) {
-                                    isDragging = true
-                                    currentOnDragStart(touchedChar, lastPos)
+                                val diff = lastPos - down.position
+                                if (!isDragging && !isScrolling) {
+                                    if (!currentIsBoardLocked &&
+                                        touchedChar != null &&
+                                        diff.y < -dragThresholdPx
+                                    ) {
+                                        isDragging = true
+                                        change.consume()
+                                        currentOnDragStart(touchedChar, lastPos)
+                                    } else if (diff.getDistance() > touchSlop) {
+                                        isScrolling = true
+                                    }
                                 } else if (isDragging) {
+                                    change.consume()
                                     currentOnDragMove(lastPos)
                                 }
                             }
@@ -438,6 +417,16 @@ fun TileKeyboardRack(
 
                         if (isDragging && touchedChar != null) {
                             currentOnDragEnd(touchedChar, lastPos, null)
+                        } else if (!isScrolling) {
+                            if (currentOnKeyAction != null) {
+                                currentOnKeyAction?.invoke(touchedKey)
+                            } else {
+                                if (touchedKey == WordsWorthLogic.KEY_CLR) {
+                                    currentOnKeyboardInput(null)
+                                } else if (touchedKey.length == 1) {
+                                    currentOnKeyboardInput(touchedKey[0])
+                                }
+                            }
                         }
                     }
                 },

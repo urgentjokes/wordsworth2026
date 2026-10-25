@@ -938,6 +938,7 @@ fun PatternOptionButton(
     val thumbSize = if (isCompact) 36.dp else 46.dp
 
     Surface(
+        onClick = onClick,
         color = bgColor,
         shape = RoundedCornerShape(10.dp),
         shadowElevation = if (isSelected) 3.dp else 1.dp,
@@ -945,26 +946,6 @@ fun PatternOptionButton(
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .border(borderWidth, borderColor, RoundedCornerShape(10.dp))
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    down.consume()
-                    var lastPos = down.position
-                    do {
-                        val event = awaitPointerEvent()
-                        event.changes.forEach {
-                            lastPos = it.position
-                            it.consume()
-                        }
-                    } while (event.changes.any { it.pressed })
-                    val slopPx = 24.dp.toPx()
-                    if (lastPos.x in -slopPx..(size.width + slopPx) &&
-                        lastPos.y in -slopPx..(size.height + slopPx)
-                    ) {
-                        currentOnClick()
-                    }
-                }
-            }
     ) {
         Row(
             modifier = Modifier
