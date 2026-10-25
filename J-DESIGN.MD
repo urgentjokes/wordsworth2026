@@ -18,7 +18,7 @@ Points	Kana Characters
 6 Pts	ゆ, も
 7 Pts	ね, む
 8 Pts	ろ, ふ
-9 Pts	へ
+9 Pts	へ, え
 10 Pts	ぬ
 
 ### Caboose Rule

@@ -72,8 +72,9 @@ class KanaConverterTest {
         assertEquals(8, KanaConverter.kanaValue('ろ'))
         assertEquals(8, KanaConverter.kanaValue('ふ'))
 
-        // 9 Pts: へ
+        // 9 Pts: へ, え
         assertEquals(9, KanaConverter.kanaValue('へ'))
+        assertEquals(9, KanaConverter.kanaValue('え'))
 
         // 10 Pts: ぬ
         assertEquals(10, KanaConverter.kanaValue('ぬ'))

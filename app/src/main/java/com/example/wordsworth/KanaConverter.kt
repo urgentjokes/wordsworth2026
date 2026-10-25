@@ -17,7 +17,7 @@ object KanaConverter {
      * - 6 Pts: ゆ, も
      * - 7 Pts: ね, む
      * - 8 Pts: ろ, ふ
-     * - 9 Pts: へ
+     * - 9 Pts: へ, え
      * - 10 Pts: ぬ
      */
     val KANA_BASE_VALUES: Map<Char, Int> = mapOf(
@@ -53,7 +53,7 @@ object KanaConverter {
         'ろ' to 8, 'ふ' to 8,
 
         // 9 Pts
-        'へ' to 9,
+        'へ' to 9, 'え' to 9,
 
         // 10 Pts
         'ぬ' to 10
