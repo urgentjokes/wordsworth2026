@@ -185,14 +185,14 @@ object WordsWorthLogic {
     val JAPANESE_ALPHABETICAL_KEYBOARD_ROWS: List<List<String>> = listOf(
         listOf("A", "B", "C", "D", "E", "F", "G", "H", "I"),
         listOf("J", "K", "L", "M", "N", "O", "P", "Q", "R", KEY_CHOONPU),
-        listOf(KEY_MODIFIER, "S", "T", "U", "V", "W", "X", "Y", "Z", KEY_CLR)
+        listOf("S", "T", "U", "V", "W", "X", "Y", "Z", KEY_CLR)
     )
 
     /** Japanese QWERTY keyboard arrangement. */
     val JAPANESE_QWERTY_KEYBOARD_ROWS: List<List<String>> = listOf(
         listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"),
         listOf("A", "S", "D", "F", "G", "H", "J", "K", "L", KEY_CHOONPU),
-        listOf(KEY_MODIFIER, "Z", "X", "C", "V", "B", "N", "M", KEY_CLR)
+        listOf("Z", "X", "C", "V", "B", "N", "M", KEY_CLR)
     )
 
     /** English Alphabetical keyboard arrangement. */

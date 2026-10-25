@@ -368,20 +368,9 @@ fun TileKeyboardRack(
                         val row = ((down.position.y / h) * rows.size).toInt()
                             .coerceIn(0, rows.size - 1)
                         val rowKeys = rows[row]
-                        val totalWeight = rowKeys.sumOf { k ->
-                            if (gameLanguage == GameLanguage.JAPANESE && (k == WordsWorthLogic.KEY_CLR || k == WordsWorthLogic.KEY_MODIFIER)) 1.25 else 1.0
-                        }
-                        val targetWeight = (down.position.x / w) * totalWeight
-                        var accumulated = 0.0
-                        var touchedKey = rowKeys.last()
-                        for (k in rowKeys) {
-                            val keyWeight = if (gameLanguage == GameLanguage.JAPANESE && (k == WordsWorthLogic.KEY_CLR || k == WordsWorthLogic.KEY_MODIFIER)) 1.25 else 1.0
-                            accumulated += keyWeight
-                            if (targetWeight <= accumulated) {
-                                touchedKey = k
-                                break
-                            }
-                        }
+                        val col = ((down.position.x / w) * rowKeys.size).toInt()
+                            .coerceIn(0, rowKeys.size - 1)
+                        val touchedKey = rowKeys[col]
 
                         val touchedChar: Char? = if (touchedKey.length == 1) touchedKey[0] else null
 
@@ -443,7 +432,7 @@ fun TileKeyboardRack(
                                 EraserRackTile(
                                     isSelected = selectedLetter == null,
                                     isCompact = isCompact,
-                                    modifier = Modifier.weight(if (gameLanguage == GameLanguage.JAPANESE) 1.25f else 1f)
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                             WordsWorthLogic.KEY_MODIFIER, "小", "゛゜" -> {

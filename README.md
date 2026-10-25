@@ -21,7 +21,7 @@ WordsWorth supports both **English** and **Japanese (WordsWorth-J)** editions wi
   - **Kana Point Values**: Point system tailored to Japanese frequency (from 0 to 10 points).
   - **Caboose Rule**: Terminal `-う` column vowels (う, く, す, つ, ぬ, ふ, む, ゆ, る) and terminal `て`/`で` score only **1 point** when appearing at the end of a word, but score their full point values when appearing elsewhere.
   - **Sokuon & Small Kana**: `ゃ`, `ゅ`, `ょ`, `っ`, and the prolonged sound mark `ー` score **0 points** (serving as structural bridge tiles).
-  - **On-Screen Modifier Key (`小゛゜`)**: Cycles placed kana between regular, small, dakuten (`゛`), and handakuten (`゜`) forms. Dedicated `ー` key.
+  - **Dedicated `ー` Key**: Prolonged sound mark key on row 2, with automatic Romaji-to-Hiragana composition.
 
 ### 📐 Multiple Board Sizes & Patterns
 - **Grid Sizes**: Choose between **6×6**, **9×9**, and **12×12** boards.

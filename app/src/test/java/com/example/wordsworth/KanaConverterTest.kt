@@ -208,11 +208,11 @@ class KanaConverterTest {
         assertEquals(3, qwerty.size)
         assertEquals(10, qwerty[0].size) // Q..P
         assertEquals(10, qwerty[1].size) // A..L + ー
-        assertEquals(9, qwerty[2].size)  // 小゛゜, Z..M, CLR
+        assertEquals(8, qwerty[2].size)  // Z..M, CLR
 
         assertEquals(listOf("A", "S", "D", "F", "G", "H", "J", "K", "L", "ー"), qwerty[1])
-        assertEquals("小゛゜", qwerty[2][0])
-        assertEquals("CLR", qwerty[2][8])
+        assertEquals("Z", qwerty[2][0])
+        assertEquals("CLR", qwerty[2][7])
     }
 
     @Test
