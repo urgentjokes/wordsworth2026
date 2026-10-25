@@ -14,6 +14,18 @@ enum class WordDirection(val label: String) {
 }
 
 /**
+ * Supported game language versions for WordsWorth.
+ *
+ * @property code ISO 639-1 language code ("en", "ja").
+ * @property badge Short 1-2 character label displayed on the top-bar switch icon ("En", "日").
+ * @property displayName Full display name for settings and descriptions.
+ */
+enum class GameLanguage(val code: String, val badge: String, val displayName: String) {
+    ENGLISH("en", "En", "English"),
+    JAPANESE("ja", "日", "日本語")
+}
+
+/**
  * Arrangement of the on-screen tile keyboard underneath the crossword board.
  *
  * @property label Display name shown in the Settings screen.
@@ -164,34 +176,80 @@ object WordsWorthLogic {
 
     val ALPHABET: List<Char> = ('A'..'Z').toList()
 
-    /**
-     * 3x9 alphabetical key matrix (`null` in the bottom-right corner represents the `CLR` key).
-     */
-    val ALPHABETICAL_KEYBOARD_ROWS: List<List<Char?>> = listOf(
-        listOf('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'),
-        listOf('J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'),
-        listOf('S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', null)
+    /** Special rack key identifiers for Japanese and board actions. */
+    const val KEY_CLR = "CLR"
+    const val KEY_MODIFIER = "小゛゜"
+    const val KEY_CHOONPU = "ー"
+
+    /** Japanese Alphabetical keyboard arrangement. */
+    val JAPANESE_ALPHABETICAL_KEYBOARD_ROWS: List<List<String>> = listOf(
+        listOf("A", "B", "C", "D", "E", "F", "G", "H", "I"),
+        listOf("J", "K", "L", "M", "N", "O", "P", "Q", "R", KEY_CHOONPU),
+        listOf(KEY_MODIFIER, "S", "T", "U", "V", "W", "X", "Y", "Z", KEY_CLR)
     )
 
-    /**
-     * Standard QWERTY key matrix (`null` in the bottom-right corner represents the `CLR` key).
-     */
-    val QWERTY_KEYBOARD_ROWS: List<List<Char?>> = listOf(
-        listOf('Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'),
-        listOf('A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'),
-        listOf('Z', 'X', 'C', 'V', 'B', 'N', 'M', null)
+    /** Japanese QWERTY keyboard arrangement. */
+    val JAPANESE_QWERTY_KEYBOARD_ROWS: List<List<String>> = listOf(
+        listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"),
+        listOf("A", "S", "D", "F", "G", "H", "J", "K", "L", KEY_CHOONPU),
+        listOf(KEY_MODIFIER, "Z", "X", "C", "V", "B", "N", "M", KEY_CLR)
     )
 
-    /** Returns the row/column key arrangement for the given [KeyboardLayout]. */
-    fun keyboardRows(layout: KeyboardLayout): List<List<Char?>> = when (layout) {
-        KeyboardLayout.ALPHABETICAL -> ALPHABETICAL_KEYBOARD_ROWS
-        KeyboardLayout.QWERTY -> QWERTY_KEYBOARD_ROWS
-    }
+    /** English Alphabetical keyboard arrangement. */
+    val ENGLISH_ALPHABETICAL_KEYBOARD_ROWS: List<List<String>> = listOf(
+        listOf("A", "B", "C", "D", "E", "F", "G", "H", "I"),
+        listOf("J", "K", "L", "M", "N", "O", "P", "Q", "R"),
+        listOf("S", "T", "U", "V", "W", "X", "Y", "Z", KEY_CLR)
+    )
+
+    /** English QWERTY keyboard arrangement. */
+    val ENGLISH_QWERTY_KEYBOARD_ROWS: List<List<String>> = listOf(
+        listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"),
+        listOf("A", "S", "D", "F", "G", "H", "J", "K", "L"),
+        listOf("Z", "X", "C", "V", "B", "N", "M", KEY_CLR)
+    )
+
+    /** Backward-compatible default keyboard matrices. */
+    val ALPHABETICAL_KEYBOARD_ROWS: List<List<String>> = JAPANESE_ALPHABETICAL_KEYBOARD_ROWS
+    val QWERTY_KEYBOARD_ROWS: List<List<String>> = JAPANESE_QWERTY_KEYBOARD_ROWS
+
+    /** Returns the row/column key arrangement for the given [KeyboardLayout] and [GameLanguage]. */
+    fun keyboardRows(layout: KeyboardLayout, language: GameLanguage = GameLanguage.ENGLISH): List<List<String>> =
+        when (language) {
+            GameLanguage.ENGLISH -> when (layout) {
+                KeyboardLayout.ALPHABETICAL -> ENGLISH_ALPHABETICAL_KEYBOARD_ROWS
+                KeyboardLayout.QWERTY -> ENGLISH_QWERTY_KEYBOARD_ROWS
+            }
+            GameLanguage.JAPANESE -> when (layout) {
+                KeyboardLayout.ALPHABETICAL -> JAPANESE_ALPHABETICAL_KEYBOARD_ROWS
+                KeyboardLayout.QWERTY -> JAPANESE_QWERTY_KEYBOARD_ROWS
+            }
+        }
 
     private const val PREFS_NAME = "wordsworth_prefs"
+    private const val KEY_GAME_LANGUAGE = "game_language"
     private const val KEY_KEYBOARD_LAYOUT = "keyboard_layout"
     private const val KEY_SCORING_MODE = "scoring_mode"
     private const val KEY_ALLOW_DUPLICATE_WORD_POINTS = "allow_duplicate_word_points"
+
+    /** Loads the user's saved [GameLanguage] from SharedPreferences. */
+    fun loadGameLanguage(context: Context): GameLanguage {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val saved = prefs.getString(KEY_GAME_LANGUAGE, GameLanguage.ENGLISH.name)
+        return try {
+            GameLanguage.valueOf(saved ?: GameLanguage.ENGLISH.name)
+        } catch (_: Exception) {
+            GameLanguage.ENGLISH
+        }
+    }
+
+    /** Persists the user's selected [GameLanguage] to SharedPreferences. */
+    fun saveGameLanguage(context: Context, lang: GameLanguage) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_GAME_LANGUAGE, lang.name)
+            .apply()
+    }
 
     /** Loads the user's saved [KeyboardLayout] from SharedPreferences. */
     fun loadKeyboardLayout(context: Context): KeyboardLayout {
@@ -249,39 +307,122 @@ object WordsWorthLogic {
             .apply()
     }
 
-    /** Returns the point value for a single character tile (case-insensitive). */
-    fun letterValue(ch: Char): Int = LETTER_VALUES[ch.uppercaseChar()] ?: 0
+    /** Returns true if [ch] is a Japanese Kana or chōonpu character. */
+    fun isJapaneseChar(ch: Char): Boolean = KanaConverter.isKana(ch) || ch == KanaConverter.CHOONPU
 
-    /** Returns the total raw point value of all letters in [word]. */
-    fun wordRawScore(word: String): Int = word.sumOf { letterValue(it) }
+    /** Returns true if [text] contains Japanese Kana characters. */
+    fun isJapaneseText(text: String): Boolean = text.any { isJapaneseChar(it) }
 
-    private const val WHITELIST_FILE = "whitelisted_words.txt"
+    /** Returns the point value for a single character tile. */
+    fun letterValue(ch: Char, language: GameLanguage? = null): Int {
+        val isJa = if (language != null) language == GameLanguage.JAPANESE else isJapaneseChar(ch)
+        return if (isJa) {
+            KanaConverter.kanaValue(ch)
+        } else {
+            LETTER_VALUES[ch.uppercaseChar()] ?: 0
+        }
+    }
 
     /**
-     * Loads the base word list from `assets/words.txt` (filtered to 2..[MAX_BOARD_SIZE] letters)
+     * Determines whether the letter at ([r], [c]) on [board] is acting as a Caboose letter in Japanese.
+     * Per J-DESIGN.MD, kana in the -う column or て/で score 1 point when appearing at the *end*
+     * of a word (and not continuing into another word).
+     */
+    fun isCabooseCell(board: Array<Array<Char?>>, r: Int, c: Int): Boolean {
+        val size = board.size
+        val ch = board.getOrNull(r)?.getOrNull(c) ?: return false
+        if (!isLetterCell(ch)) return false
+        if (ch !in KanaConverter.CABOOSE_KANA) return false
+
+        // Check horizontal relationships (run of >= 2 letters)
+        val hasLeft = c > 0 && isLetterCell(board[r][c - 1])
+        val hasRight = c < size - 1 && isLetterCell(board[r][c + 1])
+        val endsHorizontal = hasLeft && !hasRight
+
+        // Check vertical relationships (run of >= 2 letters)
+        val hasAbove = r > 0 && isLetterCell(board[r - 1][c])
+        val hasBelow = r < size - 1 && isLetterCell(board[r + 1][c])
+        val endsVertical = hasAbove && !hasBelow
+
+        // It is a caboose if it terminates at least one word and does not continue into another word
+        return (endsHorizontal || endsVertical) && !hasRight && !hasBelow
+    }
+
+    /**
+     * Returns the displayed point value for a cell at ([r], [c]) on [board].
+     * If the cell contains a caboose kana at the end of a word in Japanese,
+     * it evaluates to 1 point per the Caboose Rule; otherwise its intrinsic base tile value.
+     */
+    fun cellDisplayValue(board: Array<Array<Char?>>, r: Int, c: Int, language: GameLanguage? = null): Int {
+        val ch = board.getOrNull(r)?.getOrNull(c) ?: return 0
+        if (!isLetterCell(ch)) return 0
+        val isJa = if (language != null) language == GameLanguage.JAPANESE else isJapaneseChar(ch)
+        return if (isJa) {
+            val baseVal = KanaConverter.kanaValue(ch)
+            if (isCabooseCell(board, r, c)) {
+                minOf(baseVal, 1)
+            } else {
+                baseVal
+            }
+        } else {
+            LETTER_VALUES[ch.uppercaseChar()] ?: 0
+        }
+    }
+
+    /** Returns the total raw point value of all letters in [word], applying language rules. */
+    fun wordRawScore(word: String, language: GameLanguage? = null): Int {
+        val isJa = if (language != null) language == GameLanguage.JAPANESE else isJapaneseText(word)
+        return if (isJa) {
+            KanaConverter.wordRawScore(word)
+        } else {
+            word.sumOf { LETTER_VALUES[it.uppercaseChar()] ?: 0 }
+        }
+    }
+
+    private fun getWhitelistFileName(language: GameLanguage): String =
+        if (language == GameLanguage.JAPANESE) "whitelisted_words_ja.txt" else "whitelisted_words.txt"
+
+    /**
+     * Loads the base word list from assets (`words.txt` or `words_ja.txt`, filtered to 2..[MAX_BOARD_SIZE] letters)
      * and merges in any custom words added to the user's local whitelist.
      */
-    fun loadDictionary(context: Context): Set<String> {
+    fun loadDictionary(context: Context, language: GameLanguage = GameLanguage.ENGLISH): Set<String> {
+        val assetFileName = if (language == GameLanguage.JAPANESE) "words_ja.txt" else "words.txt"
         val baseWords = try {
-            context.assets.open("words.txt").bufferedReader().useLines { lines ->
-                lines.map { it.trim().uppercase() }
+            val stream = try {
+                context.assets.open(assetFileName)
+            } catch (_: Exception) {
+                context.assets.open("words.txt")
+            }
+            stream.bufferedReader().useLines { lines ->
+                lines.map { line ->
+                    val trimmed = line.trim()
+                    if (language == GameLanguage.ENGLISH) trimmed.uppercase() else trimmed
+                }
                     .filter { it.length in 2..MAX_BOARD_SIZE }
                     .toHashSet()
             }
         } catch (_: Exception) {
-            mutableSetOf("SALUTE", "SHOES", "OVERT", "TOT", "ER", "RAVE", "AT", "SALVE", "OR")
+            if (language == GameLanguage.JAPANESE) {
+                mutableSetOf("はっけん", "ぬき", "せぬ", "はな", "けむり", "さくら", "にほん")
+            } else {
+                mutableSetOf("SALUTE", "SHOES", "OVERT", "TOT", "ER", "RAVE", "AT", "SALVE", "OR")
+            }
         }
-        baseWords.addAll(loadWhitelist(context))
+        baseWords.addAll(loadWhitelist(context, language))
         return baseWords
     }
 
-    /** Reads the user's custom whitelisted words from internal storage. */
-    fun loadWhitelist(context: Context): Set<String> {
-        val file = File(context.filesDir, WHITELIST_FILE)
+    /** Reads the user's custom whitelisted words from internal storage for [language]. */
+    fun loadWhitelist(context: Context, language: GameLanguage = GameLanguage.ENGLISH): Set<String> {
+        val file = File(context.filesDir, getWhitelistFileName(language))
         if (!file.exists()) return emptySet()
         return try {
             file.readLines()
-                .map { it.trim().uppercase() }
+                .map { line ->
+                    val trimmed = line.trim()
+                    if (language == GameLanguage.ENGLISH) trimmed.uppercase() else trimmed
+                }
                 .filter { it.isNotEmpty() }
                 .toSet()
         } catch (_: Exception) {
@@ -289,18 +430,42 @@ object WordsWorthLogic {
         }
     }
 
-    /** Adds [word] to the persistent user whitelist file and returns the updated set. */
-    fun addWordToWhitelist(context: Context, word: String): Set<String> {
-        val normalized = word.trim().uppercase()
-        if (normalized.isEmpty()) return loadWhitelist(context)
-        val current = loadWhitelist(context).toMutableSet()
+    /** Adds [word] to the persistent user whitelist file for [language] and returns the updated set. */
+    fun addWordToWhitelist(context: Context, word: String, language: GameLanguage = GameLanguage.ENGLISH): Set<String> {
+        val normalized = if (language == GameLanguage.ENGLISH) word.trim().uppercase() else word.trim()
+        if (normalized.isEmpty()) return loadWhitelist(context, language)
+        val current = loadWhitelist(context, language).toMutableSet()
         current.add(normalized)
         try {
-            val file = File(context.filesDir, WHITELIST_FILE)
+            val file = File(context.filesDir, getWhitelistFileName(language))
             file.writeText(current.sorted().joinToString("\n"))
         } catch (_: Exception) {
         }
         return current
+    }
+
+    /** Removes [word] from the whitelist file for [language]. */
+    fun removeWordFromWhitelist(context: Context, word: String, language: GameLanguage = GameLanguage.ENGLISH): Set<String> {
+        val normalized = if (language == GameLanguage.ENGLISH) word.trim().uppercase() else word.trim()
+        val current = loadWhitelist(context, language).toMutableSet()
+        current.remove(normalized)
+        try {
+            val file = File(context.filesDir, getWhitelistFileName(language))
+            file.writeText(current.sorted().joinToString("\n"))
+        } catch (_: Exception) {
+        }
+        return current
+    }
+
+    /** Clears all whitelisted words for [language]. */
+    fun clearWhitelist(context: Context, language: GameLanguage = GameLanguage.ENGLISH) {
+        try {
+            val file = File(context.filesDir, getWhitelistFileName(language))
+            if (file.exists()) {
+                file.delete()
+            }
+        } catch (_: Exception) {
+        }
     }
 
     /**
@@ -446,7 +611,8 @@ object WordsWorthLogic {
         dictionary: Set<String>,
         scoringMode: ScoringMode = ScoringMode.EXTENDED_DIFF_ONLY,
         previouslyValidatedWords: Collection<FormedWord> = emptyList(),
-        allowDuplicateWordPoints: Boolean = true
+        allowDuplicateWordPoints: Boolean = true,
+        language: GameLanguage? = null
     ): TallyResult {
         val size = board.size
         val foundWords = mutableListOf<FormedWord>()
@@ -460,7 +626,8 @@ object WordsWorthLogic {
                     val sb = StringBuilder()
                     val cells = mutableListOf<Pair<Int, Int>>()
                     while (c < size && isLetterCell(board[r][c])) {
-                        val ch = board[r][c]!!.uppercaseChar()
+                        val rawCh = board[r][c]!!
+                        val ch = if (isJapaneseChar(rawCh)) rawCh else rawCh.uppercaseChar()
                         sb.append(ch)
                         cells.add(r to c)
                         c++
@@ -474,7 +641,7 @@ object WordsWorthLogic {
                                 startRow = r,
                                 startCol = startC,
                                 cells = cells,
-                                rawPoints = wordRawScore(text),
+                                rawPoints = wordRawScore(text, language),
                                 isValid = dictionary.contains(text)
                             )
                         )
@@ -494,7 +661,8 @@ object WordsWorthLogic {
                     val sb = StringBuilder()
                     val cells = mutableListOf<Pair<Int, Int>>()
                     while (r < size && isLetterCell(board[r][c])) {
-                        val ch = board[r][c]!!.uppercaseChar()
+                        val rawCh = board[r][c]!!
+                        val ch = if (isJapaneseChar(rawCh)) rawCh else rawCh.uppercaseChar()
                         sb.append(ch)
                         cells.add(r to c)
                         r++
@@ -508,7 +676,7 @@ object WordsWorthLogic {
                                 startRow = startR,
                                 startCol = c,
                                 cells = cells,
-                                rawPoints = wordRawScore(text),
+                                rawPoints = wordRawScore(text, language),
                                 isValid = dictionary.contains(text)
                             )
                         )
@@ -569,7 +737,10 @@ object WordsWorthLogic {
                                 prev.cells.indices.all { idx ->
                                     val (pr, pc) = prev.cells[idx]
                                     pr in 0 until size && pc in 0 until size &&
-                                        board[pr][pc]?.uppercaseChar() == prev.word[idx]
+                                        board[pr][pc]?.let {
+                                            val c = if (isJapaneseChar(it)) it else it.uppercaseChar()
+                                            c == prev.word[idx]
+                                        } == true
                                 }
                         }
                         .sortedBy { it.cells.size }
@@ -579,7 +750,7 @@ object WordsWorthLogic {
                         if (seenKeys.add(key)) {
                             combined.add(
                                 baseWord.copy(
-                                    rawPoints = wordRawScore(baseWord.word),
+                                    rawPoints = wordRawScore(baseWord.word, language),
                                     isValid = true,
                                     isDuplicateUnscored = false
                                 )
@@ -648,25 +819,28 @@ object WordsWorthLogic {
     }
 
     /**
-     * Populates a sample crossword layout onto a board of the given [size]:
-     * ```
-     * SALUTE
-     * H   OR
-     * OVERT
-     * E  A
-     * SALVE
-     *  T E
-     * ```
+     * Populates a sample crossword layout onto a board of the given [size] and [language].
      */
-    fun exampleBoard(size: Int = BOARD_SIZE): Array<Array<Char?>> {
-        val rows = listOf(
-            "SALUTE",
-            "H   OR",
-            "OVERT ",
-            "E  A  ",
-            "SALVE ",
-            " T E  "
-        )
+    fun exampleBoard(size: Int = BOARD_SIZE, language: GameLanguage = GameLanguage.ENGLISH): Array<Array<Char?>> {
+        val rows = if (language == GameLanguage.JAPANESE) {
+            listOf(
+                "はっけん  ",
+                "な む   ",
+                "  りつみん",
+                "    ず ",
+                "   ぬき ",
+                "      "
+            )
+        } else {
+            listOf(
+                "SALUTE",
+                "H   OR",
+                "OVERT ",
+                "E  A  ",
+                "SALVE ",
+                " T E  "
+            )
+        }
         return Array(size) { r ->
             Array(size) { c ->
                 val ch = rows.getOrNull(r)?.getOrNull(c) ?: ' '

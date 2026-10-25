@@ -23,10 +23,12 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
 import com.example.wordsworth.FormedWord
+import com.example.wordsworth.GameLanguage
 import com.example.wordsworth.KeyboardLayout
 import com.example.wordsworth.SavedGameEntry
 import com.example.wordsworth.SavedGamesManager
@@ -110,7 +113,11 @@ fun WordsWorthGameScreen(
     onOpenSettings: () -> Unit,
     savedGames: List<SavedGameEntry>,
     onClickSavedGame: (SavedGameEntry) -> Unit,
-    onDeleteSavedGame: (SavedGameEntry) -> Unit
+    onDeleteSavedGame: (SavedGameEntry) -> Unit,
+    gameLanguage: GameLanguage = GameLanguage.ENGLISH,
+    onToggleLanguage: () -> Unit = {},
+    pendingRomaji: String = "",
+    onKeyAction: (String) -> Unit = {}
 ) {
     // Cached thumbnails for the "All-blank" and "Random pattern" option buttons
     val allBlankThumb = remember {
@@ -202,8 +209,10 @@ fun WordsWorthGameScreen(
                         vertical = if (isCompactBoard) 4.dp else 6.dp
                     )
             ) {
-                // Top Bar: App Title, Example/Clear actions, and Settings Gear Icon
+                // Top Bar: App Title, Language Toggle ("En"/"日"), Example/Clear actions, and Settings
                 WordsWorthTopBar(
+                    gameLanguage = gameLanguage,
+                    onToggleLanguage = onToggleLanguage,
                     onLoadExample = onLoadExample,
                     onClearBoard = onClearBoard,
                     onOpenSettings = onOpenSettings,
@@ -256,7 +265,9 @@ fun WordsWorthGameScreen(
                                     onGridBoundsChanged = { gridBoundsInRoot = it },
                                     onBoardCellTap = onBoardCellTap,
                                     onClearCell = { r, c -> onUpdateCell(r, c, null) },
-                                    isCompact = true
+                                    isCompact = true,
+                                    pendingRomaji = pendingRomaji,
+                                    gameLanguage = gameLanguage
                                 )
                             }
 
@@ -285,6 +296,9 @@ fun WordsWorthGameScreen(
                                 dragThresholdPx = dragThresholdPx,
                                 onKeyboardOriginChanged = { keyboardOriginInRoot = it },
                                 onKeyboardInput = onKeyboardInput,
+                                isCompact = true,
+                                gameLanguage = gameLanguage,
+                                onKeyAction = onKeyAction,
                                 onDragStart = { letter, localPos ->
                                     draggingLetter = letter
                                     dragPositionInRoot = keyboardOriginInRoot + localPos
@@ -303,8 +317,7 @@ fun WordsWorthGameScreen(
                                         )
                                     }
                                     draggingLetter = null
-                                },
-                                isCompact = true
+                                }
                             )
 
                             // Validate & Quit Action Buttons
@@ -386,7 +399,9 @@ fun WordsWorthGameScreen(
                                     onGridBoundsChanged = { gridBoundsInRoot = it },
                                     onBoardCellTap = onBoardCellTap,
                                     onClearCell = { r, c -> onUpdateCell(r, c, null) },
-                                    isCompact = true
+                                    isCompact = true,
+                                    pendingRomaji = pendingRomaji,
+                                    gameLanguage = gameLanguage
                                 )
                             }
 
@@ -430,6 +445,9 @@ fun WordsWorthGameScreen(
                                     dragThresholdPx = dragThresholdPx,
                                     onKeyboardOriginChanged = { keyboardOriginInRoot = it },
                                     onKeyboardInput = onKeyboardInput,
+                                    isCompact = true,
+                                    gameLanguage = gameLanguage,
+                                    onKeyAction = onKeyAction,
                                     onDragStart = { letter, localPos ->
                                         draggingLetter = letter
                                         dragPositionInRoot = keyboardOriginInRoot + localPos
@@ -448,8 +466,7 @@ fun WordsWorthGameScreen(
                                             )
                                         }
                                         draggingLetter = null
-                                    },
-                                    isCompact = true
+                                    }
                                 )
 
                                 ValidateAndQuitRow(
@@ -545,7 +562,9 @@ fun WordsWorthGameScreen(
                                         cellSpacing = cellSpacing,
                                         onGridBoundsChanged = { gridBoundsInRoot = it },
                                         onBoardCellTap = onBoardCellTap,
-                                        onClearCell = { r, c -> onUpdateCell(r, c, null) }
+                                        onClearCell = { r, c -> onUpdateCell(r, c, null) },
+                                        pendingRomaji = pendingRomaji,
+                                        gameLanguage = gameLanguage
                                     )
 
                                     Spacer(modifier = Modifier.height(6.dp))
@@ -575,6 +594,8 @@ fun WordsWorthGameScreen(
                                         dragThresholdPx = dragThresholdPx,
                                         onKeyboardOriginChanged = { keyboardOriginInRoot = it },
                                         onKeyboardInput = onKeyboardInput,
+                                        gameLanguage = gameLanguage,
+                                        onKeyAction = onKeyAction,
                                         onDragStart = { letter, localPos ->
                                             draggingLetter = letter
                                             dragPositionInRoot = keyboardOriginInRoot + localPos
@@ -702,7 +723,9 @@ fun WordsWorthGameScreen(
                                         cellSpacing = cellSpacing,
                                         onGridBoundsChanged = { gridBoundsInRoot = it },
                                         onBoardCellTap = onBoardCellTap,
-                                        onClearCell = { r, c -> onUpdateCell(r, c, null) }
+                                        onClearCell = { r, c -> onUpdateCell(r, c, null) },
+                                        pendingRomaji = pendingRomaji,
+                                        gameLanguage = gameLanguage
                                     )
 
                                     Spacer(modifier = Modifier.height(6.dp))
@@ -732,6 +755,8 @@ fun WordsWorthGameScreen(
                                         dragThresholdPx = dragThresholdPx,
                                         onKeyboardOriginChanged = { keyboardOriginInRoot = it },
                                         onKeyboardInput = onKeyboardInput,
+                                        gameLanguage = gameLanguage,
+                                        onKeyAction = onKeyAction,
                                         onDragStart = { letter, localPos ->
                                             draggingLetter = letter
                                             dragPositionInRoot = keyboardOriginInRoot + localPos
@@ -858,6 +883,8 @@ private fun ValidateAndQuitRow(
  */
 @Composable
 private fun WordsWorthTopBar(
+    gameLanguage: GameLanguage,
+    onToggleLanguage: () -> Unit,
     onLoadExample: () -> Unit,
     onClearBoard: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -868,12 +895,41 @@ private fun WordsWorthTopBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = "WordsWorth",
-            fontSize = if (isCompact) 19.sp else 22.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = MaterialTheme.colorScheme.primary
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = if (gameLanguage == GameLanguage.ENGLISH) "WordsWorth" else "WordsWorth-J",
+                fontSize = if (isCompact) 18.sp else 22.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            // Language switch icon/button at the top of the screen ("En" for English, "日" for Japanese)
+            Surface(
+                onClick = onToggleLanguage,
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary),
+                shadowElevation = 1.dp
+            ) {
+                Box(
+                    modifier = Modifier.padding(
+                        horizontal = if (isCompact) 8.dp else 10.dp,
+                        vertical = if (isCompact) 3.dp else 5.dp
+                    ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (gameLanguage == GameLanguage.ENGLISH) "En" else "日",
+                        fontSize = if (isCompact) 13.sp else 15.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
 
         Row(
             verticalAlignment = Alignment.CenterVertically,

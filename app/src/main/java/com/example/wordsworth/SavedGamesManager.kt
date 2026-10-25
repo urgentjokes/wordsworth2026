@@ -153,7 +153,8 @@ object SavedGamesManager {
      */
     fun createBoardScreenshot(
         board: Array<Array<Char?>>,
-        cellValidations: Map<Pair<Int, Int>, CellValidation>
+        cellValidations: Map<Pair<Int, Int>, CellValidation>,
+        language: GameLanguage? = null
     ): Bitmap {
         val boardSize = board.size
         val sizePx = 420
@@ -241,7 +242,7 @@ object SavedGamesManager {
                     canvas.drawText(letterChar.toString(), centerX, centerY, letterPaint)
 
                     valuePaint.color = textColor
-                    val pts = WordsWorthLogic.letterValue(letterChar).toString()
+                    val pts = WordsWorthLogic.cellDisplayValue(board, r, c, language).toString()
                     val inset = (cellSize * 0.08f).coerceAtLeast(2f)
                     canvas.drawText(
                         pts,
@@ -268,11 +269,12 @@ object SavedGamesManager {
         board: Array<Array<Char?>>,
         tallyResult: TallyResult,
         elapsedSeconds: Int,
-        replaceId: Long? = null
+        replaceId: Long? = null,
+        language: GameLanguage? = null
     ): SavedGameEntry {
         val dir = getStorageDir(context)
         val id = System.currentTimeMillis()
-        val bitmap = createBoardScreenshot(board, tallyResult.cellValidations)
+        val bitmap = createBoardScreenshot(board, tallyResult.cellValidations, language)
         val imageFile = File(dir, "board_$id.png")
         FileOutputStream(imageFile).use { out ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)

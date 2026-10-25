@@ -36,11 +36,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.wordsworth.CellValidation
+import com.example.wordsworth.GameLanguage
 import com.example.wordsworth.KeyboardLayout
 import com.example.wordsworth.TallyResult
 import com.example.wordsworth.WordDirection
@@ -69,7 +71,9 @@ fun CrosswordBoardGrid(
     onBoardCellTap: (Int, Int) -> Unit,
     onClearCell: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
-    isCompact: Boolean = false
+    isCompact: Boolean = false,
+    pendingRomaji: String = "",
+    gameLanguage: GameLanguage = GameLanguage.ENGLISH
 ) {
     val currentBoard by rememberUpdatedState(board)
     val currentBoardSize by rememberUpdatedState(boardSize)
@@ -153,6 +157,8 @@ fun CrosswordBoardGrid(
                         val validation = tallyResult?.cellValidations?.get(r to c)
                             ?: CellValidation.UNCHECKED
 
+                        val displayValue = WordsWorthLogic.cellDisplayValue(board, r, c, gameLanguage)
+
                         BoardCell(
                             letter = cellChar,
                             boardSize = boardSize,
@@ -161,6 +167,8 @@ fun CrosswordBoardGrid(
                             isHovered = isHovered,
                             validation = validation,
                             isCompact = isCompact,
+                            pendingRomaji = if (isFocused) pendingRomaji else "",
+                            displayValue = displayValue,
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxSize()
@@ -176,8 +184,8 @@ fun CrosswordBoardGrid(
  * Renders a single square within the crossword grid.
  *
  * - Empty focused squares display a centered direction arrow (`→` for Across, `↓` for Down)
- *   scaled to match the board's letter font size.
- * - Occupied squares display the uppercase letter centered and its point value in the bottom-right corner.
+ *   scaled to match the board's letter font size, or pending Romaji if the player is typing in Japanese.
+ * - Occupied squares display the letter/kana centered and its point value in the bottom-right corner.
  * - Validated squares are tinted green ([CellValidation.VALID]) or red ([CellValidation.INVALID]).
  */
 @Composable
@@ -189,7 +197,9 @@ fun BoardCell(
     isHovered: Boolean,
     validation: CellValidation,
     modifier: Modifier = Modifier,
-    isCompact: Boolean = false
+    isCompact: Boolean = false,
+    pendingRomaji: String = "",
+    displayValue: Int? = null
 ) {
     val isBlocked = WordsWorthLogic.isBlockedCell(letter)
     val isLetter = WordsWorthLogic.isLetterCell(letter)
@@ -272,8 +282,16 @@ fun BoardCell(
             .border(borderWidth, borderColor, RoundedCornerShape(cornerRadius))
             .padding(innerPadding)
     ) {
-        // Show centered direction arrow inside an empty focused square
-        if (isFocused && !isBlocked && !isLetter) {
+        // Show pending Romaji (if typing) or centered direction arrow inside an empty focused square
+        if (isFocused && pendingRomaji.isNotEmpty()) {
+            Text(
+                text = pendingRomaji.uppercase(),
+                fontSize = (letterFontSize.value * 0.75f).sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = WordsWorthColors.FocusedCursorBlue,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        } else if (isFocused && !isBlocked && !isLetter) {
             Text(
                 text = if (focusDirection == WordDirection.HORIZONTAL) "→" else "↓",
                 fontSize = letterFontSize,
@@ -295,8 +313,9 @@ fun BoardCell(
                 color = textColor,
                 modifier = Modifier.align(Alignment.Center)
             )
+            val pts = (displayValue ?: WordsWorthLogic.letterValue(letter)).toString()
             Text(
-                text = WordsWorthLogic.letterValue(letter).toString(),
+                text = pts,
                 fontSize = valueFontSize,
                 fontWeight = FontWeight.Bold,
                 color = textColor.copy(alpha = 0.8f),
@@ -326,12 +345,15 @@ fun TileKeyboardRack(
     onDragMove: (Offset) -> Unit,
     onDragEnd: (Char, Offset, Pair<Pair<Int, Int>, Char?>?) -> Unit,
     modifier: Modifier = Modifier,
-    isCompact: Boolean = false
+    isCompact: Boolean = false,
+    gameLanguage: GameLanguage = GameLanguage.ENGLISH,
+    onKeyAction: ((String) -> Unit)? = null
 ) {
-    val keyboardRowsList = WordsWorthLogic.keyboardRows(keyboardLayout)
+    val keyboardRowsList = WordsWorthLogic.keyboardRows(keyboardLayout, gameLanguage)
     val currentKeyboardRows by rememberUpdatedState(keyboardRowsList)
     val currentIsBoardLocked by rememberUpdatedState(isBoardLocked)
     val currentOnKeyboardInput by rememberUpdatedState(onKeyboardInput)
+    val currentOnKeyAction by rememberUpdatedState(onKeyAction)
     val currentOnDragStart by rememberUpdatedState(onDragStart)
     val currentOnDragMove by rememberUpdatedState(onDragMove)
     val currentOnDragEnd by rememberUpdatedState(onDragEnd)
@@ -365,12 +387,32 @@ fun TileKeyboardRack(
                         val row = ((down.position.y / h) * rows.size).toInt()
                             .coerceIn(0, rows.size - 1)
                         val rowKeys = rows[row]
-                        val col = ((down.position.x / w) * rowKeys.size).toInt()
-                            .coerceIn(0, rowKeys.size - 1)
-                        val touchedLetter: Char? = rowKeys[col]
+                        val totalWeight = rowKeys.sumOf { k ->
+                            if (gameLanguage == GameLanguage.JAPANESE && (k == WordsWorthLogic.KEY_CLR || k == WordsWorthLogic.KEY_MODIFIER)) 1.25 else 1.0
+                        }
+                        val targetWeight = (down.position.x / w) * totalWeight
+                        var accumulated = 0.0
+                        var touchedKey = rowKeys.last()
+                        for (k in rowKeys) {
+                            val keyWeight = if (gameLanguage == GameLanguage.JAPANESE && (k == WordsWorthLogic.KEY_CLR || k == WordsWorthLogic.KEY_MODIFIER)) 1.25 else 1.0
+                            accumulated += keyWeight
+                            if (targetWeight <= accumulated) {
+                                touchedKey = k
+                                break
+                            }
+                        }
 
-                        // Immediately populate the focused square and advance focus
-                        val undoPlacement = currentOnKeyboardInput(touchedLetter)
+                        if (currentOnKeyAction != null) {
+                            currentOnKeyAction?.invoke(touchedKey)
+                        } else {
+                            if (touchedKey == WordsWorthLogic.KEY_CLR) {
+                                currentOnKeyboardInput(null)
+                            } else if (touchedKey.length == 1) {
+                                currentOnKeyboardInput(touchedKey[0])
+                            }
+                        }
+
+                        val touchedChar: Char? = if (touchedKey.length == 1) touchedKey[0] else null
 
                         var isDragging = false
                         var lastPos = down.position
@@ -382,20 +424,20 @@ fun TileKeyboardRack(
                                 change.consume()
                                 lastPos = change.position
                                 if (!currentIsBoardLocked &&
-                                    touchedLetter != null &&
+                                    touchedChar != null &&
                                     !isDragging &&
                                     (lastPos - down.position).getDistance() > dragThresholdPx
                                 ) {
                                     isDragging = true
-                                    currentOnDragStart(touchedLetter, lastPos)
+                                    currentOnDragStart(touchedChar, lastPos)
                                 } else if (isDragging) {
                                     currentOnDragMove(lastPos)
                                 }
                             }
                         } while (event.changes.any { it.pressed })
 
-                        if (isDragging && touchedLetter != null) {
-                            currentOnDragEnd(touchedLetter, lastPos, undoPlacement)
+                        if (isDragging && touchedChar != null) {
+                            currentOnDragEnd(touchedChar, lastPos, null)
                         }
                     }
                 },
@@ -406,28 +448,117 @@ fun TileKeyboardRack(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(keySpacing)
                 ) {
-                    for (letter in rowKeys) {
-                        if (letter != null) {
-                            val value = WordsWorthLogic.letterValue(letter)
-                            val isSelected = selectedLetter == letter
-                            LetterRackTile(
-                                letter = letter,
-                                value = value,
-                                isSelected = isSelected,
-                                isCompact = isCompact,
-                                modifier = Modifier.weight(1f)
-                            )
-                        } else {
-                            EraserRackTile(
-                                isSelected = selectedLetter == null,
-                                isCompact = isCompact,
-                                modifier = Modifier.weight(1f)
-                            )
+                    for (key in rowKeys) {
+                        when (key) {
+                            WordsWorthLogic.KEY_CLR -> {
+                                EraserRackTile(
+                                    isSelected = selectedLetter == null,
+                                    isCompact = isCompact,
+                                    modifier = Modifier.weight(if (gameLanguage == GameLanguage.JAPANESE) 1.25f else 1f)
+                                )
+                            }
+                            WordsWorthLogic.KEY_MODIFIER, "小", "゛゜" -> {
+                                ModifierRackTile(
+                                    isCompact = isCompact,
+                                    modifier = Modifier.weight(1.25f)
+                                )
+                            }
+                            else -> {
+                                if (gameLanguage == GameLanguage.ENGLISH && key.length == 1) {
+                                    val letterChar = key[0]
+                                    val value = WordsWorthLogic.letterValue(letterChar, GameLanguage.ENGLISH)
+                                    val isSelected = selectedLetter == letterChar
+                                    LetterRackTile(
+                                        letter = letterChar,
+                                        value = value,
+                                        isSelected = isSelected,
+                                        isCompact = isCompact,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                } else {
+                                    val isSelected = selectedLetter?.toString().equals(key, ignoreCase = true)
+                                    KeyRackTile(
+                                        key = key,
+                                        isSelected = isSelected,
+                                        isCompact = isCompact,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * Unified Japanese modifier tile cycling between small (小), voiced (゛), and semi-voiced (゜) variants.
+ */
+@Composable
+fun ModifierRackTile(
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false
+) {
+    val tileHeight = if (isCompact) 38.dp else 46.dp
+    val labelFontSize = if (isCompact) 11.sp else 13.sp
+
+    Box(
+        modifier = modifier
+            .height(tileHeight)
+            .shadow(1.dp, RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .border(1.dp, MaterialTheme.colorScheme.secondary, RoundedCornerShape(6.dp))
+            .padding(horizontal = 1.dp, vertical = 1.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "小゛゜",
+            fontSize = labelFontSize,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            maxLines = 1,
+            softWrap = false,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+/**
+ * Individual keyboard key tile displaying its label.
+ */
+@Composable
+fun KeyRackTile(
+    key: String,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false
+) {
+    val bgColor = if (isSelected) WordsWorthColors.TileSelectedBackground else WordsWorthColors.TileDefaultBackground
+    val borderColor = if (isSelected) WordsWorthColors.TileSelectedBorder else WordsWorthColors.TileDefaultBorder
+    val borderWidth = if (isSelected) 2.dp else 1.dp
+    val tileHeight = if (isCompact) 38.dp else 46.dp
+    val letterFontSize = if (isCompact) 15.sp else 17.sp
+
+    Box(
+        modifier = modifier
+            .height(tileHeight)
+            .shadow(if (isSelected) 3.dp else 1.dp, RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(6.dp))
+            .background(bgColor)
+            .border(borderWidth, borderColor, RoundedCornerShape(6.dp))
+            .padding(1.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = key,
+            fontSize = letterFontSize,
+            fontWeight = FontWeight.ExtraBold,
+            color = WordsWorthColors.TilePrimaryText,
+            textAlign = TextAlign.Center
+        )
     }
 }
 

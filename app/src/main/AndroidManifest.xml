@@ -10,6 +10,7 @@
         android:theme="@style/Theme.WordsWorth">
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:exported="true"
             android:theme="@style/Theme.WordsWorth">
             <intent-filter>
