@@ -37,7 +37,8 @@ data class SavedGameEntry(
     val screenshotPath: String,
     val bitmap: Bitmap?,
     val board: Array<Array<Char?>>? = null,
-    val validatedWords: List<FormedWord> = emptyList()
+    val validatedWords: List<FormedWord> = emptyList(),
+    val language: GameLanguage = GameLanguage.ENGLISH
 )
 
 /**
@@ -285,6 +286,7 @@ object SavedGamesManager {
         }
         val validWordsSnapshot = tallyResult.validWords
         val timestamp = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(id))
+        val gameLang = language ?: GameLanguage.ENGLISH
         val newEntry = SavedGameEntry(
             id = id,
             score = tallyResult.totalScore,
@@ -293,7 +295,8 @@ object SavedGamesManager {
             screenshotPath = imageFile.absolutePath,
             bitmap = bitmap,
             board = boardCopy,
-            validatedWords = validWordsSnapshot
+            validatedWords = validWordsSnapshot,
+            language = gameLang
         )
 
         val currentArray = readMetadataArray(context)
@@ -305,6 +308,7 @@ object SavedGamesManager {
             put("screenshotPath", newEntry.screenshotPath)
             put("board", serializeBoard(boardCopy))
             put("validatedWords", serializeValidatedWords(validWordsSnapshot))
+            put("language", gameLang.name)
         }
 
         val updatedArray = JSONArray()
@@ -341,6 +345,20 @@ object SavedGamesManager {
             }
             val savedBoard = deserializeBoard(obj.optJSONArray("board"))
             val savedValidatedWords = deserializeValidatedWords(obj.optJSONArray("validatedWords"))
+            val langStr = obj.optString("language", "")
+            val entryLanguage = if (langStr.isNotEmpty()) {
+                try {
+                    GameLanguage.valueOf(langStr)
+                } catch (_: Exception) {
+                    GameLanguage.ENGLISH
+                }
+            } else {
+                if (savedBoard?.any { row -> row.any { ch -> ch != null && WordsWorthLogic.isJapaneseChar(ch) } } == true) {
+                    GameLanguage.JAPANESE
+                } else {
+                    GameLanguage.ENGLISH
+                }
+            }
             result.add(
                 SavedGameEntry(
                     id = obj.optLong("id", 0L),
@@ -350,7 +368,8 @@ object SavedGamesManager {
                     screenshotPath = path,
                     bitmap = bmp,
                     board = savedBoard,
-                    validatedWords = savedValidatedWords
+                    validatedWords = savedValidatedWords,
+                    language = entryLanguage
                 )
             )
         }

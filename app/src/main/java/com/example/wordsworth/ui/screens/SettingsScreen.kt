@@ -57,6 +57,8 @@ fun SettingsScreen(
     onChangeAllowDuplicateWordPoints: (Boolean) -> Unit,
     savedGamesCount: Int,
     onClearSavedGames: () -> Unit,
+    onClearBoard: () -> Unit = {},
+    onLoadExample: () -> Unit = {},
     onBack: () -> Unit
 ) {
     Scaffold(
@@ -343,6 +345,55 @@ fun SettingsScreen(
                             )
                         ) {
                             Text("Clear Previous Games History")
+                        }
+                    }
+                }
+
+                // 5. Board Actions Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Board Actions",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Clear the current game board or load the example puzzle.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    onClearBoard()
+                                    onBack()
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Clear Board")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    onLoadExample()
+                                    onBack()
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Load Example")
+                            }
                         }
                     }
                 }

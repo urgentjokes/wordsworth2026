@@ -167,7 +167,10 @@ fun WordsWorthGameScreen(
     val density = LocalDensity.current
     val dragThresholdPx = with(density) { 10.dp.toPx() }
     val floatingTileSizePx = with(density) { 50.dp.toPx() }
-    val highScoreEntry = savedGames.maxByOrNull { it.score }
+    val currentLanguageSavedGames = remember(savedGames.toList(), gameLanguage) {
+        savedGames.filter { it.language == gameLanguage }
+    }
+    val highScoreEntry = currentLanguageSavedGames.maxByOrNull { it.score }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -360,7 +363,7 @@ fun WordsWorthGameScreen(
 
                             // Previous Games History Card (full width at bottom)
                             PreviousGamesColumn(
-                                savedGames = savedGames,
+                                savedGames = currentLanguageSavedGames,
                                 onClickSavedGame = onClickSavedGame,
                                 onDeleteSavedGame = onDeleteSavedGame,
                                 thumbnailSize = 96.dp,
@@ -483,7 +486,7 @@ fun WordsWorthGameScreen(
                                 )
 
                                 PreviousGamesColumn(
-                                    savedGames = savedGames,
+                                    savedGames = currentLanguageSavedGames,
                                     onClickSavedGame = onClickSavedGame,
                                     onDeleteSavedGame = onDeleteSavedGame,
                                     thumbnailSize = 96.dp,
@@ -645,7 +648,7 @@ fun WordsWorthGameScreen(
                             }
 
                             PreviousGamesColumn(
-                                savedGames = savedGames,
+                                savedGames = currentLanguageSavedGames,
                                 onClickSavedGame = onClickSavedGame,
                                 onDeleteSavedGame = onDeleteSavedGame,
                                 thumbnailSize = 128.dp,
@@ -669,7 +672,7 @@ fun WordsWorthGameScreen(
                         ) {
                             // LEFT COLUMN: Running list of saved board mini-screenshots + scores
                             PreviousGamesColumn(
-                                savedGames = savedGames,
+                                savedGames = currentLanguageSavedGames,
                                 onClickSavedGame = onClickSavedGame,
                                 onDeleteSavedGame = onDeleteSavedGame,
                                 thumbnailSize = prevGamesThumbSize,
@@ -900,7 +903,7 @@ private fun WordsWorthTopBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = if (gameLanguage == GameLanguage.ENGLISH) "WordsWorth" else "WordsWorth-J",
+                text = "WordsWorth",
                 fontSize = if (isCompact) 18.sp else 22.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.primary
@@ -935,24 +938,6 @@ private fun WordsWorthTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(if (isCompact) 2.dp else 4.dp)
         ) {
-            TextButton(
-                onClick = onLoadExample,
-                contentPadding = PaddingValues(
-                    horizontal = if (isCompact) 8.dp else 12.dp,
-                    vertical = if (isCompact) 4.dp else 6.dp
-                )
-            ) {
-                Text("Example", fontSize = if (isCompact) 12.sp else 13.sp, fontWeight = FontWeight.SemiBold)
-            }
-            TextButton(
-                onClick = onClearBoard,
-                contentPadding = PaddingValues(
-                    horizontal = if (isCompact) 8.dp else 12.dp,
-                    vertical = if (isCompact) 4.dp else 6.dp
-                )
-            ) {
-                Text("Clear", fontSize = if (isCompact) 12.sp else 13.sp, fontWeight = FontWeight.SemiBold)
-            }
             IconButton(
                 onClick = onOpenSettings,
                 modifier = if (isCompact) Modifier.size(36.dp) else Modifier

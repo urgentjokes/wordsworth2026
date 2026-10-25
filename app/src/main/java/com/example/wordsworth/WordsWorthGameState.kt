@@ -882,11 +882,8 @@ class WordsWorthGameState(
             isRandomPatternMode = restoredBoard.any { row -> row.any { WordsWorthLogic.isBlockedCell(it) } }
             board = restoredBoard
 
-            // Detect language from board tiles
-            val hasKana = restoredBoard.any { row ->
-                row.any { it != null && WordsWorthLogic.isJapaneseChar(it) }
-            }
-            val entryLang = if (hasKana) GameLanguage.JAPANESE else GameLanguage.ENGLISH
+            // Restore language from saved entry
+            val entryLang = entry.language
             if (entryLang != gameLanguage) {
                 gameLanguage = entryLang
                 WordsWorthLogic.saveGameLanguage(context, entryLang)
