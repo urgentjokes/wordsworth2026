@@ -243,12 +243,22 @@ object SavedGamesManager {
                     canvas.drawText(letterChar.toString(), centerX, centerY, letterPaint)
 
                     valuePaint.color = textColor
-                    val pts = WordsWorthLogic.cellDisplayValue(board, r, c, language).toString()
+                    val pts = WordsWorthLogic.cellDisplayString(board, r, c, language)
+                    if (pts.length > 2) {
+                        valuePaint.textSize = (cellSize * 0.22f).coerceIn(7f, 18f)
+                    } else {
+                        valuePaint.textSize = (cellSize * 0.28f).coerceIn(10f, 24f)
+                    }
                     val inset = (cellSize * 0.08f).coerceAtLeast(2f)
+                    val yPos = if (pts.contains('・')) {
+                        cellRect.bottom - (inset * 0.5f)
+                    } else {
+                        cellRect.bottom - inset
+                    }
                     canvas.drawText(
                         pts,
                         cellRect.right - inset,
-                        cellRect.bottom - inset,
+                        yPos,
                         valuePaint
                     )
                 }

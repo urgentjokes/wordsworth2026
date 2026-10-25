@@ -26,8 +26,8 @@ WordsWorth supports both **English** and **Japanese (WordsWorth-J)** editions wi
 ### 📐 Multiple Board Sizes & Patterns
 - **Grid Sizes**: Choose between **6×6**, **9×9**, and **12×12** boards.
 - **Board Patterns**:
-  - **All-blank**: Freeform crossword grid where every square is available.
-  - **Random pattern**: Generates a symmetrical crossword board with blacked-out blocked squares (`#`).
+  - **All-blank**: Crossword grid where every square is available.
+  - **Random pattern**: Generates a crossword board with blacked-out blocked squares (`#`).
 
 ### ⏱ Game Modes & Timers
 - **Standard Mode**: Free play with an automatic elapsed timer counting up from `0:00`.

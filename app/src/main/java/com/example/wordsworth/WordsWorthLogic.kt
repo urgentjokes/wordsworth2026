@@ -324,9 +324,8 @@ object WordsWorthLogic {
     }
 
     /**
-     * Determines whether the letter at ([r], [c]) on [board] is acting as a Caboose letter in Japanese.
-     * Per J-DESIGN.MD, kana in the -う column or て/で score 1 point when appearing at the *end*
-     * of a word (and not continuing into another word).
+     * Determines whether the letter at ([r], [c]) on [board] is acting strictly as a Caboose letter in Japanese
+     * without simultaneously continuing as a non-terminal letter in another word.
      */
     fun isCabooseCell(board: Array<Array<Char?>>, r: Int, c: Int): Boolean {
         val size = board.size
@@ -334,18 +333,86 @@ object WordsWorthLogic {
         if (!isLetterCell(ch)) return false
         if (ch !in KanaConverter.CABOOSE_KANA) return false
 
-        // Check horizontal relationships (run of >= 2 letters)
-        val hasLeft = c > 0 && isLetterCell(board[r][c - 1])
-        val hasRight = c < size - 1 && isLetterCell(board[r][c + 1])
-        val endsHorizontal = hasLeft && !hasRight
+        // Check horizontal run of letters containing (r, c)
+        var startC = c
+        while (startC > 0 && isLetterCell(board[r][startC - 1])) startC--
+        var endC = c
+        while (endC < size - 1 && isLetterCell(board[r][endC + 1])) endC++
+        val horizLen = endC - startC + 1
 
-        // Check vertical relationships (run of >= 2 letters)
-        val hasAbove = r > 0 && isLetterCell(board[r - 1][c])
-        val hasBelow = r < size - 1 && isLetterCell(board[r + 1][c])
-        val endsVertical = hasAbove && !hasBelow
+        // Check vertical run of letters containing (r, c)
+        var startR = r
+        while (startR > 0 && isLetterCell(board[startR - 1][c])) startR--
+        var endR = r
+        while (endR < size - 1 && isLetterCell(board[endR + 1][c])) endR++
+        val vertLen = endR - startR + 1
 
-        // It is a caboose if it terminates at least one word and does not continue into another word
-        return (endsHorizontal || endsVertical) && !hasRight && !hasBelow
+        val isCabooseHoriz = horizLen >= 2 && c == endC
+        val isNonTerminalHoriz = horizLen >= 2 && c < endC
+
+        val isCabooseVert = vertLen >= 2 && r == endR
+        val isNonTerminalVert = vertLen >= 2 && r < endR
+
+        val scoresCaboose = isCabooseHoriz || isCabooseVert
+        val scoresOriginal = isNonTerminalHoriz || isNonTerminalVert
+
+        return scoresCaboose && !scoresOriginal
+    }
+
+    /**
+     * Returns the formatted string representation of the displayed point value for a cell
+     * at ([r], [c]) on [board].
+     *
+     * In Japanese mode, when a tile in [KanaConverter.CABOOSE_KANA] with base value > 1 terminates
+     * one word (scored as 1 point per the Caboose Rule) AND simultaneously continues into another
+     * intersecting word (scored at its original base value), both values are displayed separated
+     * by a middle dot: `"1・$baseVal"`, e.g., `"1・6"`.
+     */
+    fun cellDisplayString(board: Array<Array<Char?>>, r: Int, c: Int, language: GameLanguage? = null): String {
+        val ch = board.getOrNull(r)?.getOrNull(c) ?: return ""
+        if (!isLetterCell(ch)) return ""
+        val isJa = if (language != null) language == GameLanguage.JAPANESE else isJapaneseChar(ch)
+        if (!isJa) {
+            return (LETTER_VALUES[ch.uppercaseChar()] ?: 0).toString()
+        }
+
+        val baseVal = KanaConverter.kanaValue(ch)
+        if (ch !in KanaConverter.CABOOSE_KANA) {
+            return baseVal.toString()
+        }
+
+        val size = board.size
+
+        // Find horizontal run of letters containing (r, c)
+        var startC = c
+        while (startC > 0 && isLetterCell(board[r][startC - 1])) startC--
+        var endC = c
+        while (endC < size - 1 && isLetterCell(board[r][endC + 1])) endC++
+        val horizLen = endC - startC + 1
+
+        // Find vertical run of letters containing (r, c)
+        var startR = r
+        while (startR > 0 && isLetterCell(board[startR - 1][c])) startR--
+        var endR = r
+        while (endR < size - 1 && isLetterCell(board[endR + 1][c])) endR++
+        val vertLen = endR - startR + 1
+
+        val isCabooseHoriz = horizLen >= 2 && c == endC
+        val isNonTerminalHoriz = horizLen >= 2 && c < endC
+
+        val isCabooseVert = vertLen >= 2 && r == endR
+        val isNonTerminalVert = vertLen >= 2 && r < endR
+
+        val scoresCaboose = isCabooseHoriz || isCabooseVert
+        val scoresOriginal = isNonTerminalHoriz || isNonTerminalVert
+
+        return if (scoresCaboose && scoresOriginal && baseVal > 1) {
+            "1・$baseVal"
+        } else if (scoresCaboose) {
+            minOf(baseVal, 1).toString()
+        } else {
+            baseVal.toString()
+        }
     }
 
     /**

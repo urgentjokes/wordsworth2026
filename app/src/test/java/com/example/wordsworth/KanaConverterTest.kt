@@ -200,6 +200,43 @@ class KanaConverterTest {
         // Test 5: Single isolated letter ぬ -> not a word (length < 2), displays main value (10 pts)
         board[5][5] = 'ぬ'
         assertEquals(10, WordsWorthLogic.cellDisplayValue(board, 5, 5))
+        assertEquals("10", WordsWorthLogic.cellDisplayString(board, 5, 5, GameLanguage.JAPANESE))
+    }
+
+    @Test
+    fun testDualCabooseAndOriginalDisplayValue() {
+        val board = WordsWorthLogic.createBlankBoard(6)
+
+        // Case 1: ふゆ (horizontal, ゆ terminal caboose) intersecting ゆき (vertical, ゆ initial)
+        // ゆ base value is 6. It scores as caboose (1) horizontally and original (6) vertically -> "1・6"
+        board[0][0] = 'ふ'
+        board[0][1] = 'ゆ'
+        board[1][1] = 'き'
+
+        assertEquals("1・6", WordsWorthLogic.cellDisplayString(board, 0, 1, GameLanguage.JAPANESE))
+        assertEquals("8", WordsWorthLogic.cellDisplayString(board, 0, 0, GameLanguage.JAPANESE))
+        assertEquals("3", WordsWorthLogic.cellDisplayString(board, 1, 1, GameLanguage.JAPANESE))
+
+        // Case 2: のむ (vertical, む terminal caboose) intersecting むかし (horizontal, む initial)
+        // む base value is 7. It scores as caboose (1) vertically and original (7) horizontally -> "1・7"
+        board[2][2] = 'の'
+        board[3][2] = 'む'
+        board[3][3] = 'か'
+        board[3][4] = 'し'
+
+        assertEquals("1・7", WordsWorthLogic.cellDisplayString(board, 3, 2, GameLanguage.JAPANESE))
+        assertEquals("1", WordsWorthLogic.cellDisplayString(board, 2, 2, GameLanguage.JAPANESE))
+        assertEquals("1", WordsWorthLogic.cellDisplayString(board, 3, 3, GameLanguage.JAPANESE))
+        assertEquals("1", WordsWorthLogic.cellDisplayString(board, 3, 4, GameLanguage.JAPANESE))
+
+        // Case 3: Two words both ending in ぬ (both score as caboose) -> "1"
+        board[4][1] = 'せ'
+        board[4][2] = 'ぬ'
+        // board[3][2] is already 'む', so 'む' -> 'ぬ' is a 2-letter vertical word ending at 'ぬ'!
+        // Horizontal: せ -> ぬ (ends at ぬ, caboose)
+        // Vertical: む -> ぬ (ends at ぬ, caboose)
+        // Both words score ぬ as caboose, so it displays "1"
+        assertEquals("1", WordsWorthLogic.cellDisplayString(board, 4, 2, GameLanguage.JAPANESE))
     }
 
     @Test

@@ -139,7 +139,7 @@ fun CrosswordBoardGrid(
                         val validation = tallyResult?.cellValidations?.get(r to c)
                             ?: CellValidation.UNCHECKED
 
-                        val displayValue = WordsWorthLogic.cellDisplayValue(board, r, c, gameLanguage)
+                        val displayValue = WordsWorthLogic.cellDisplayString(board, r, c, gameLanguage)
 
                         BoardCell(
                             letter = cellChar,
@@ -181,7 +181,7 @@ fun BoardCell(
     modifier: Modifier = Modifier,
     isCompact: Boolean = false,
     pendingRomaji: String = "",
-    displayValue: Int? = null
+    displayValue: String? = null
 ) {
     val isBlocked = WordsWorthLogic.isBlockedCell(letter)
     val isLetter = WordsWorthLogic.isLetterCell(letter)
@@ -295,14 +295,28 @@ fun BoardCell(
                 color = textColor,
                 modifier = Modifier.align(Alignment.Center)
             )
-            val pts = (displayValue ?: WordsWorthLogic.letterValue(letter)).toString()
+            val pts = displayValue ?: WordsWorthLogic.letterValue(letter).toString()
+            val isDual = pts.contains('・')
+            val adjustedFontSize = if (isDual || pts.length > 2) valueFontSize * 0.85f else valueFontSize
+            val yOffset = if (isDual) {
+                when {
+                    boardSize >= 12 -> 1.dp
+                    boardSize >= 9 -> 1.5.dp
+                    else -> 2.dp
+                }
+            } else {
+                0.dp
+            }
             Text(
                 text = pts,
-                fontSize = valueFontSize,
+                fontSize = adjustedFontSize,
                 fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
                 color = textColor.copy(alpha = 0.8f),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
+                    .offset(y = yOffset)
                     .padding(end = if (isCompact) 0.5.dp else 1.dp)
             )
         }
