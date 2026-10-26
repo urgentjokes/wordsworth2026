@@ -98,17 +98,25 @@ object KanaConverter {
     }
 
     /**
-     * Calculates the raw score of a word applying the Caboose Rule to the terminal kana.
+     * Calculates the raw score of a word applying either the Caboose Rule or Precision Verbs rule to the terminal kana.
      * e.g., ぬき -> 13 (10 + 3), せぬ -> 6 (5 + 1), はっけん -> 6 (1 + 0 + 3 + 2).
      */
-    fun wordRawScore(word: String): Int {
+    fun wordRawScore(
+        word: String,
+        japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
+        isVerb: Boolean = false
+    ): Int {
         if (word.isEmpty()) return 0
         var total = 0
         val lastIndex = word.length - 1
         for (i in word.indices) {
             val ch = word[i]
             val baseVal = kanaValue(ch)
-            if (i == lastIndex && ch in CABOOSE_KANA) {
+            val isTerminalReduced = when (japaneseVerbRule) {
+                JapaneseVerbRule.CABOOSE -> (i == lastIndex && ch in CABOOSE_KANA)
+                JapaneseVerbRule.PRECISION_VERBS -> (i == lastIndex && isVerb)
+            }
+            if (isTerminalReduced) {
                 total += minOf(baseVal, 1)
             } else {
                 total += baseVal
@@ -116,6 +124,11 @@ object KanaConverter {
         }
         return total
     }
+
+    /**
+     * Legacy/default overload applying the standard Caboose Rule.
+     */
+    fun wordRawScore(word: String): Int = wordRawScore(word, JapaneseVerbRule.CABOOSE, false)
 
     private val SMALL_TO_NORMAL = mapOf(
         'っ' to 'つ', 'ゃ' to 'や', 'ゅ' to 'ゆ', 'ょ' to 'よ',

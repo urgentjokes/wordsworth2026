@@ -59,11 +59,15 @@ class WordsWorthGameState(
             val loadedDictJa = withContext(Dispatchers.IO) {
                 WordsWorthLogic.loadDictionary(context, GameLanguage.JAPANESE)
             }
+            val loadedVerbs = withContext(Dispatchers.IO) {
+                WordsWorthLogic.loadJapaneseVerbDictionary(context)
+            }
             val loadedGames = withContext(Dispatchers.IO) {
                 SavedGamesManager.loadSavedGames(context)
             }
             englishDictionary = loadedDictEn
             japaneseDictionary = loadedDictJa
+            japaneseVerbDictionary = loadedVerbs
             savedGames.clear()
             savedGames.addAll(loadedGames)
             isDictionaryLoaded = true
@@ -115,6 +119,12 @@ class WordsWorthGameState(
      * the first instance (`true` = points every time, `false` = points only the first time).
      */
     var allowDuplicateWordPoints by mutableStateOf(WordsWorthLogic.loadAllowDuplicateWordPoints(context))
+
+    /** Active Japanese verb scoring rule ([JapaneseVerbRule.CABOOSE] or [JapaneseVerbRule.PRECISION_VERBS]). */
+    var japaneseVerbRule by mutableStateOf(WordsWorthLogic.loadJapaneseVerbRule(context))
+
+    /** Loaded Japanese verb dictionary from all_japanese_verbs_hiragana.txt. */
+    var japaneseVerbDictionary by mutableStateOf<Set<String>>(emptySet())
 
     /**
      * Validated words recorded earlier in the current game session.
@@ -967,7 +977,19 @@ class WordsWorthGameState(
         allowDuplicateWordPoints = allow
         WordsWorthLogic.saveAllowDuplicateWordPoints(context, allow)
         if (tallyResult != null && isDictionaryLoaded) {
-            tallyResult = evaluateBoard(board, dictionary, scoringMode, allow)
+            tallyResult = evaluateBoard(allowDuplicates = allow)
+        }
+    }
+
+    /**
+     * Updates the user's [JapaneseVerbRule] preference, saves it to SharedPreferences, and
+     * immediately recomputes [tallyResult] if a validated board is currently displayed.
+     */
+    fun changeJapaneseVerbRule(newRule: JapaneseVerbRule) {
+        japaneseVerbRule = newRule
+        WordsWorthLogic.saveJapaneseVerbRule(context, newRule)
+        if (tallyResult != null && isDictionaryLoaded) {
+            tallyResult = evaluateBoard(verbRule = newRule)
         }
     }
 
@@ -1010,7 +1032,9 @@ class WordsWorthGameState(
                 tallyResult = currentTally,
                 elapsedSeconds = elapsed,
                 replaceId = resumedGameId,
-                language = gameLanguage
+                language = gameLanguage,
+                japaneseVerbRule = japaneseVerbRule,
+                verbDictionary = japaneseVerbDictionary
             )
             withContext(Dispatchers.Main) {
                 resumedGameId?.let { id ->
@@ -1045,7 +1069,9 @@ class WordsWorthGameState(
         evalBoard: Array<Array<Char?>> = board,
         dict: Set<String> = dictionary,
         mode: ScoringMode = scoringMode,
-        allowDuplicates: Boolean = allowDuplicateWordPoints
+        allowDuplicates: Boolean = allowDuplicateWordPoints,
+        verbRule: JapaneseVerbRule = japaneseVerbRule,
+        verbs: Set<String> = japaneseVerbDictionary
     ): TallyResult {
         val result = WordsWorthLogic.tallyBoard(
             board = evalBoard,
@@ -1053,7 +1079,9 @@ class WordsWorthGameState(
             scoringMode = mode,
             previouslyValidatedWords = validatedWordsHistory,
             allowDuplicateWordPoints = allowDuplicates,
-            language = gameLanguage
+            language = gameLanguage,
+            japaneseVerbRule = verbRule,
+            verbDictionary = verbs
         )
         // Record all valid words formed during this session into history
         for (word in result.validWords) {

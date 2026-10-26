@@ -274,6 +274,46 @@ class KanaConverterTest {
     }
 
     @Test
+    fun testJapaneseBoardTallyPrecisionVerbs() {
+        val board: Array<Array<Char?>> = Array(3) { Array(3) { null } }
+        // Row 0: い ぬ
+        board[0][0] = 'い'
+        board[0][1] = 'ぬ'
+        // Row 1: し ぬ
+        board[1][0] = 'し'
+        board[1][1] = 'ぬ'
+
+        val dict = setOf("いぬ", "しぬ")
+        val verbDict = setOf("しぬ") // "しぬ" is a verb, "いぬ" is not a verb
+
+        val cabooseResult = WordsWorthLogic.tallyBoard(
+            board = board,
+            dictionary = dict,
+            language = GameLanguage.JAPANESE,
+            japaneseVerbRule = JapaneseVerbRule.CABOOSE,
+            verbDictionary = verbDict
+        )
+        // Under Caboose:
+        // いぬ: い(1) + ぬ(1) = 2
+        // しぬ: し(1) + ぬ(1) = 2
+        // Total = 4
+        assertEquals(4, cabooseResult.totalScore)
+
+        val precisionResult = WordsWorthLogic.tallyBoard(
+            board = board,
+            dictionary = dict,
+            language = GameLanguage.JAPANESE,
+            japaneseVerbRule = JapaneseVerbRule.PRECISION_VERBS,
+            verbDictionary = verbDict
+        )
+        // Under Precision Verbs:
+        // いぬ: い(1) + ぬ(10) = 11 (not a verb because ends in いぬ)
+        // しぬ: し(1) + ぬ(1) = 2 (is a verb)
+        // Total = 13
+        assertEquals(13, precisionResult.totalScore)
+    }
+
+    @Test
     fun testEnglishBoardTally() {
         val board = WordsWorthLogic.exampleBoard(language = GameLanguage.ENGLISH)
         val dict = setOf("SALUTE", "SHOES", "OVERT", "TOT", "ER", "RAVE", "AT", "SALVE", "OR")
@@ -282,5 +322,130 @@ class KanaConverterTest {
         assertEquals(9, result.validWords.size)
         assertEquals(0, result.invalidWords.size)
         assertTrue(result.totalScore > 0)
+    }
+
+    @Test
+    fun testPrecisionVerbsIsJapaneseVerb() {
+        val mockVerbDict = setOf("しぬ", "たべる", "あう", "いく", "かく", "うぬ", "きぬ", "およぐ", "とぶ", "あそぶ", "もえいず", "うなづく")
+
+        // 1. Terminal kana check: Non-verbs ending in non-terminal kana must be false
+        assertEquals(false, WordsWorthLogic.isJapaneseVerb("ねこ", mockVerbDict))
+        assertEquals(false, WordsWorthLogic.isJapaneseVerb("くるま", mockVerbDict))
+        assertEquals(false, WordsWorthLogic.isJapaneseVerb("はな", mockVerbDict))
+
+        // 2. Exact match in verb dictionary ending in terminal kana
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("しぬ", mockVerbDict))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("たべる", mockVerbDict))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("いく", mockVerbDict))
+
+        // 2b. Triggers for dakuten (ぐ, ず, づ) and ぶ
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("およぐ", mockVerbDict))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("とぶ", mockVerbDict))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("あそぶ", mockVerbDict))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("もえいず", mockVerbDict))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("うなづく", mockVerbDict))
+        // Non-verbs ending in ぐ, ず, づ, ぶ not in dict
+        assertEquals(false, WordsWorthLogic.isJapaneseVerb("まぐ", mockVerbDict))
+        assertEquals(false, WordsWorthLogic.isJapaneseVerb("こぶ", mockVerbDict))
+
+        // 3. 2-kana suffix matches ("だす", "こむ", "あう", "たつ", "つく", "きる", "とる", "おく", "よる", "いる", "ます", "ぬく", "やる", "そめる")
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("とびだす", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("すいこむ", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("はなしあう", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("おもいたつ", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("おいつく", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("おもいきる", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("うけとる", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("すえおく", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("たちよる", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("おもいいる", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("たべます", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("ひきぬく", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("おもいやる", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("あかそめる", emptySet()))
+
+        // 4. 3-kana suffix matches ("あげる", "さげる", "かける", "つける", "すぎる", "なおす", "おとす", "はらう", "ちらす", "まわす", "ならう")
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("もちあげる", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("ひきさげる", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("といかける", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("おもいつける", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("やりすぎる", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("みなおす", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("ひきおとす", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("おいちらす", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("みまわす", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("みならう", emptySet()))
+
+        // 5. Excluded ぬ words must be false: (word is うぬ、きぬ、おぬ、かんぬ) or (ends with いぬ)
+        assertEquals(false, WordsWorthLogic.isJapaneseVerb("うぬ", mockVerbDict))
+        assertEquals(false, WordsWorthLogic.isJapaneseVerb("きぬ", mockVerbDict))
+        assertEquals(false, WordsWorthLogic.isJapaneseVerb("おぬ", mockVerbDict))
+        assertEquals(false, WordsWorthLogic.isJapaneseVerb("かんぬ", mockVerbDict))
+        assertEquals(false, WordsWorthLogic.isJapaneseVerb("いぬ", mockVerbDict))
+        assertEquals(false, WordsWorthLogic.isJapaneseVerb("のらいぬ", mockVerbDict))
+        assertEquals(false, WordsWorthLogic.isJapaneseVerb("あきたいぬ", mockVerbDict))
+
+        // 6. Other words ending in ぬ are verb=true (even if not in dictionary)
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("しぬ", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("せぬ", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("よまぬ", emptySet()))
+        assertEquals(true, WordsWorthLogic.isJapaneseVerb("たべぬ", emptySet()))
+    }
+
+    @Test
+    fun testWordRawScoreCabooseVsPrecisionVerbs() {
+        val verbDict = setOf("しぬ", "たべる", "かく", "とぶ")
+
+        // CABOOSE rule:
+        // Any word ending in terminal kana has last letter scored as 1 point
+        // "きぬ": 'き'(3) + caboose 'ぬ'(1) = 4
+        assertEquals(4, KanaConverter.wordRawScore("きぬ", JapaneseVerbRule.CABOOSE))
+        // "いぬ": 'い'(1) + caboose 'ぬ'(1) = 2
+        assertEquals(2, KanaConverter.wordRawScore("いぬ", JapaneseVerbRule.CABOOSE))
+        // "しぬ": 'し'(1) + caboose 'ぬ'(1) = 2
+        assertEquals(2, KanaConverter.wordRawScore("しぬ", JapaneseVerbRule.CABOOSE))
+        // "とぶ": 'と'(1) + caboose 'ぶ'(1) = 2
+        assertEquals(2, KanaConverter.wordRawScore("とぶ", JapaneseVerbRule.CABOOSE))
+
+        // PRECISION_VERBS rule:
+        // "きぬ": not a verb -> 'き'(3) + normal 'ぬ'(10) = 13
+        val kinusVerb = WordsWorthLogic.isJapaneseVerb("きぬ", verbDict)
+        assertEquals(false, kinusVerb)
+        assertEquals(13, KanaConverter.wordRawScore("きぬ", JapaneseVerbRule.PRECISION_VERBS, kinusVerb))
+
+        // "いぬ": not a verb -> 'い'(1) + normal 'ぬ'(10) = 11
+        val inuIsVerb = WordsWorthLogic.isJapaneseVerb("いぬ", verbDict)
+        assertEquals(false, inuIsVerb)
+        assertEquals(11, KanaConverter.wordRawScore("いぬ", JapaneseVerbRule.PRECISION_VERBS, inuIsVerb))
+
+        // "しぬ": IS a verb -> 'し'(1) + verb-last 'ぬ'(1) = 2
+        val shinuIsVerb = WordsWorthLogic.isJapaneseVerb("しぬ", verbDict)
+        assertEquals(true, shinuIsVerb)
+        assertEquals(2, KanaConverter.wordRawScore("しぬ", JapaneseVerbRule.PRECISION_VERBS, shinuIsVerb))
+
+        // "とぶ": IS a verb -> 'と'(1) + verb-last 'ぶ'(1, normally 8) = 2
+        val tobuIsVerb = WordsWorthLogic.isJapaneseVerb("とぶ", verbDict)
+        assertEquals(true, tobuIsVerb)
+        assertEquals(2, KanaConverter.wordRawScore("とぶ", JapaneseVerbRule.PRECISION_VERBS, tobuIsVerb))
+
+        // "こぶ": NOT a verb -> 'こ'(2) + normal 'ぶ'(8) = 10
+        val kobuIsVerb = WordsWorthLogic.isJapaneseVerb("こぶ", verbDict)
+        assertEquals(false, kobuIsVerb)
+        assertEquals(10, KanaConverter.wordRawScore("こぶ", JapaneseVerbRule.PRECISION_VERBS, kobuIsVerb))
+
+        // Compound verb ending in だす: "とびだす"
+        // 'と'(1) + 'び'(5) + 'だ'(1) + 'す'(1 if verb, 3 if not)
+        val tobiIsVerb = WordsWorthLogic.isJapaneseVerb("とびだす", verbDict)
+        assertEquals(true, tobiIsVerb)
+        assertEquals(8, KanaConverter.wordRawScore("とびだす", JapaneseVerbRule.PRECISION_VERBS, tobiIsVerb))
+    }
+
+    @Test
+    fun testLoadJapaneseVerbDictionaryFromFile() {
+        val verbs = WordsWorthLogic.loadJapaneseVerbDictionaryFromFile()
+        assertTrue("Verb dictionary should load words from file/assets", verbs.isNotEmpty())
+        assertTrue("Verb dictionary should contain common verb しぬ", verbs.contains("しぬ"))
+        assertTrue("Verb dictionary should contain common verb たべる", verbs.contains("たべる"))
+        assertTrue("Verb dictionary should contain common verb いく", verbs.contains("いく"))
     }
 }
