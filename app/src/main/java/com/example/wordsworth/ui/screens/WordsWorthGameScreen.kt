@@ -1,6 +1,9 @@
 package com.example.wordsworth.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -44,12 +47,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
@@ -71,6 +76,7 @@ import com.example.wordsworth.ui.components.PreviousGamesColumn
 import com.example.wordsworth.ui.components.ScoreAndWordsColumn
 import com.example.wordsworth.ui.components.TileKeyboardRack
 import com.example.wordsworth.ui.components.WordsListCard
+import com.example.wordsworth.ui.components.WordsListDialog
 import com.example.wordsworth.ui.theme.WordsWorthColors
 
 /**
@@ -145,6 +151,7 @@ fun WordsWorthGameScreen(
     var keyboardOriginInRoot by remember { mutableStateOf(Offset.Zero) }
     var draggingLetter by remember { mutableStateOf<Char?>(null) }
     var dragPositionInRoot by remember { mutableStateOf(Offset.Zero) }
+    var showWordsDialog by remember { mutableStateOf(false) }
 
     val currentBoardSize by rememberUpdatedState(boardSize)
 
@@ -312,8 +319,7 @@ fun WordsWorthGameScreen(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .verticalScroll(rememberScrollState()),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
                                         // Compact 3-card row: High Score | Score | Timer / Time Attack
                                         CompactScoreAndTimerRow(
@@ -324,6 +330,8 @@ fun WordsWorthGameScreen(
                                             timeAttackMinutes = timeAttackMinutes,
                                             isBoardLocked = isBoardLocked
                                         )
+
+                                        Spacer(modifier = Modifier.height(6.dp))
 
                                         // Square Crossword Board
                                         Box(
@@ -350,22 +358,38 @@ fun WordsWorthGameScreen(
                                             )
                                         }
 
-                                        // Direction / Locked Tip
-                                        Text(
-                                            text = if (isBoardLocked) {
-                                                "Time's up! Board locked — tap Quit to save or Clear to play again."
-                                            } else {
-                                                "Tip: Tap the arrow to toggle direction."
-                                            },
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isBoardLocked) {
-                                                WordsWorthColors.InvalidWordText
-                                            } else {
-                                                WordsWorthColors.FocusedCursorBlue
-                                            },
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
+                                        Spacer(modifier = Modifier.height(3.dp))
+
+                                        // Direction / Locked Tip Row with Words Pill
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = if (isBoardLocked) {
+                                                    "Time's up! Board locked."
+                                                } else {
+                                                    "Tip: Tap arrow to toggle → ↓."
+                                                },
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isBoardLocked) {
+                                                    WordsWorthColors.InvalidWordText
+                                                } else {
+                                                    WordsWorthColors.FocusedCursorBlue
+                                                },
+                                                modifier = Modifier.weight(1f, fill = false)
+                                            )
+
+                                            WordsPill(
+                                                wordCount = tallyResult?.words?.size ?: 0,
+                                                fontSize = 11.sp,
+                                                onClick = { showWordsDialog = true }
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.height(3.dp))
 
                                         // Compact On-Screen Tile Keyboard
                                         TileKeyboardRack(
@@ -400,22 +424,14 @@ fun WordsWorthGameScreen(
                                             }
                                         )
 
+                                        Spacer(modifier = Modifier.height(6.dp))
+
                                         // Validate & Quit Action Buttons
                                         ValidateAndQuitRow(
                                             isDictionaryLoaded = isDictionaryLoaded,
                                             onValidate = onValidate,
                                             onQuitClick = onQuitClick,
                                             isCompact = true
-                                        )
-
-                                        // Full-width Words List Card
-                                        WordsListCard(
-                                            tallyResult = tallyResult,
-                                            onRequestWhitelistWord = onRequestWhitelistWord,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(top = 2.dp, bottom = 8.dp),
-                                            inScrollableParent = true
                                         )
                                     }
                                 }
@@ -458,8 +474,7 @@ fun WordsWorthGameScreen(
                                             modifier = Modifier
                                                 .weight(1f)
                                                 .fillMaxHeight()
-                                                .verticalScroll(rememberScrollState()),
-                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                                .verticalScroll(rememberScrollState())
                                         ) {
                                             CompactScoreAndTimerRow(
                                                 highScoreEntry = highScoreEntry,
@@ -470,21 +485,38 @@ fun WordsWorthGameScreen(
                                                 isBoardLocked = isBoardLocked
                                             )
 
-                                            Text(
-                                                text = if (isBoardLocked) {
-                                                    "Time's up! Board locked — tap Quit to save or Clear to play again."
-                                                } else {
-                                                    "Tip: Tap the arrow to toggle direction."
-                                                },
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isBoardLocked) {
-                                                    WordsWorthColors.InvalidWordText
-                                                } else {
-                                                    WordsWorthColors.FocusedCursorBlue
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+
+                                            // Direction / Locked Tip Row with Words Pill
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = if (isBoardLocked) {
+                                                        "Time's up! Board locked."
+                                                    } else {
+                                                        "Tip: Tap the arrow to toggle direction."
+                                                    },
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isBoardLocked) {
+                                                        WordsWorthColors.InvalidWordText
+                                                    } else {
+                                                        WordsWorthColors.FocusedCursorBlue
+                                                    },
+                                                    modifier = Modifier.weight(1f, fill = false)
+                                                )
+
+                                                WordsPill(
+                                                    wordCount = tallyResult?.words?.size ?: 0,
+                                                    fontSize = 11.sp,
+                                                    onClick = { showWordsDialog = true }
+                                                )
+                                            }
+
+                                            Spacer(modifier = Modifier.height(3.dp))
 
                                             TileKeyboardRack(
                                                 keyboardLayout = keyboardLayout,
@@ -518,20 +550,13 @@ fun WordsWorthGameScreen(
                                                 }
                                             )
 
+                                            Spacer(modifier = Modifier.height(6.dp))
+
                                             ValidateAndQuitRow(
                                                 isDictionaryLoaded = isDictionaryLoaded,
                                                 onValidate = onValidate,
                                                 onQuitClick = onQuitClick,
                                                 isCompact = true
-                                            )
-
-                                            WordsListCard(
-                                                tallyResult = tallyResult,
-                                                onRequestWhitelistWord = onRequestWhitelistWord,
-                                                inScrollableParent = true,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(bottom = 8.dp)
                                             )
                                         }
                                     }
@@ -586,25 +611,38 @@ fun WordsWorthGameScreen(
                                                 verbDictionary = verbDictionary
                                             )
 
-                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Spacer(modifier = Modifier.height(3.dp))
 
-                                            Text(
-                                                text = if (isBoardLocked) {
-                                                    "Time's up! Board locked — tap Quit to save or Clear to play again."
-                                                } else {
-                                                    "Tip: Tap the arrow to toggle direction."
-                                                },
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isBoardLocked) {
-                                                    WordsWorthColors.InvalidWordText
-                                                } else {
-                                                    WordsWorthColors.FocusedCursorBlue
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
+                                            // Direction / Locked Tip Row with Words Pill
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = if (isBoardLocked) {
+                                                        "Time's up! Board locked."
+                                                    } else {
+                                                        "Tip: Tap the arrow to toggle direction."
+                                                    },
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isBoardLocked) {
+                                                        WordsWorthColors.InvalidWordText
+                                                    } else {
+                                                        WordsWorthColors.FocusedCursorBlue
+                                                    },
+                                                    modifier = Modifier.weight(1f, fill = false)
+                                                )
 
-                                            Spacer(modifier = Modifier.height(4.dp))
+                                                WordsPill(
+                                                    wordCount = tallyResult?.words?.size ?: 0,
+                                                    fontSize = 12.sp,
+                                                    onClick = { showWordsDialog = true }
+                                                )
+                                            }
+
+                                            Spacer(modifier = Modifier.height(2.dp))
 
                                             TileKeyboardRack(
                                                 keyboardLayout = keyboardLayout,
@@ -686,6 +724,18 @@ fun WordsWorthGameScreen(
                     letter = ch,
                     dragPositionInRoot = dragPositionInRoot,
                     tileSizePx = floatingTileSizePx
+                )
+            }
+
+            // Modal pop-up words list dialog
+            if (showWordsDialog) {
+                WordsListDialog(
+                    tallyResult = tallyResult,
+                    onRequestWhitelistWord = { formedWord ->
+                        showWordsDialog = false
+                        onRequestWhitelistWord(formedWord)
+                    },
+                    onDismiss = { showWordsDialog = false }
                 )
             }
         }
@@ -817,5 +867,38 @@ private fun WordsWorthTopBar(
                 )
             }
         }
+    }
+}
+
+/**
+ * Compact pill button placed directly next to the direction tip.
+ * Sized to fit comfortably in the slot between gameboard and keyboard.
+ */
+@Composable
+private fun WordsPill(
+    wordCount: Int,
+    fontSize: TextUnit = 11.sp,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .border(
+                1.dp,
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                RoundedCornerShape(8.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 5.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = if (wordCount > 0) "Words ($wordCount)" else "Words",
+            fontSize = fontSize,
+            lineHeight = fontSize,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colorScheme.onPrimaryContainer
+        )
     }
 }

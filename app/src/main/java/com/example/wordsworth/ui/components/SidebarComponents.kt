@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -122,7 +123,7 @@ fun TimerCard(
                 .fillMaxWidth()
                 .padding(
                     horizontal = if (isCompact) 6.dp else 12.dp,
-                    vertical = if (isCompact) 6.dp else 10.dp
+                    vertical = if (isCompact) 4.dp else 10.dp
                 ),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -135,7 +136,7 @@ fun TimerCard(
             )
             Text(
                 text = formatTimer(displaySeconds),
-                fontSize = if (isCompact) 20.sp else 30.sp,
+                fontSize = if (isCompact) 18.sp else 30.sp,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1,
                 color = contentColor
@@ -181,7 +182,7 @@ fun CompactScoreAndTimerRow(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -197,17 +198,17 @@ fun CompactScoreAndTimerRow(
                 ) {
                     Text(
                         text = "$highScore",
-                        fontSize = 20.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold,
                         maxLines = 1,
                         color = MaterialTheme.colorScheme.onSecondary
                     )
                     Text(
                         text = "pts",
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSecondary.copy(alpha = 0.9f),
-                        modifier = Modifier.padding(bottom = 2.dp)
+                        modifier = Modifier.padding(bottom = 1.dp)
                     )
                 }
             }
@@ -225,7 +226,7 @@ fun CompactScoreAndTimerRow(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -241,17 +242,17 @@ fun CompactScoreAndTimerRow(
                 ) {
                     Text(
                         text = "${tallyResult?.totalScore ?: 0}",
-                        fontSize = 20.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold,
                         maxLines = 1,
                         color = MaterialTheme.colorScheme.onSecondary
                     )
                     Text(
                         text = "pts",
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSecondary.copy(alpha = 0.9f),
-                        modifier = Modifier.padding(bottom = 2.dp)
+                        modifier = Modifier.padding(bottom = 1.dp)
                     )
                 }
             }
@@ -593,6 +594,99 @@ fun WordsListCard(
             }
         }
     }
+}
+
+/**
+ * Modal dialog that displays all formed words on the board (valid in green, invalid in red)
+ * in a scrollable list, opened by tapping the "Words" pill next to the direction tip.
+ */
+@Composable
+fun WordsListDialog(
+    tallyResult: TallyResult?,
+    onRequestWhitelistWord: (FormedWord) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val wordCount = tallyResult?.words?.size ?: 0
+    val invalidCount = tallyResult?.invalidWords?.size ?: 0
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(
+                    text = if (wordCount > 0) "Words ($wordCount)" else "Words",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                if (invalidCount > 0) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Hold red word to whitelist",
+                        fontSize = 11.sp,
+                        color = WordsWorthColors.InvalidCellBorder
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                if (tallyResult == null) {
+                    Text(
+                        text = "Tap Validate to check words and score.",
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp)
+                    )
+                } else if (tallyResult.words.isEmpty() && tallyResult.isolatedCells.isEmpty()) {
+                    Text(
+                        text = "No words formed yet.\nPlace 2+ connected letters.",
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp)
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        tallyResult.words.forEach { fw ->
+                            FormedWordItemRow(
+                                fw = fw,
+                                onRequestWhitelistWord = onRequestWhitelistWord
+                            )
+                        }
+                        if (tallyResult.isolatedCells.isNotEmpty()) {
+                            Text(
+                                text = "${tallyResult.isolatedCells.size} isolated tile(s) (0 pts)",
+                                fontSize = 11.sp,
+                                color = WordsWorthColors.InvalidCellBorder,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Close", fontWeight = FontWeight.Bold)
+            }
+        }
+    )
 }
 
 /**
