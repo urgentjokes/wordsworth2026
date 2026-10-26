@@ -1,5 +1,6 @@
 package com.example.wordsworth.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -22,25 +23,30 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -59,6 +65,7 @@ import com.example.wordsworth.ui.components.BoardOptionsColumn
 import com.example.wordsworth.ui.components.CompactScoreAndTimerRow
 import com.example.wordsworth.ui.components.CrosswordBoardGrid
 import com.example.wordsworth.ui.components.FloatingDraggedTile
+import com.example.wordsworth.ui.components.ModesTabContent
 import com.example.wordsworth.ui.components.PreviousGamesColumn
 import com.example.wordsworth.ui.components.ScoreAndWordsColumn
 import com.example.wordsworth.ui.components.TileKeyboardRack
@@ -66,21 +73,13 @@ import com.example.wordsworth.ui.components.WordsListCard
 import com.example.wordsworth.ui.theme.WordsWorthColors
 
 /**
- * Main gameplay screen of WordsWorth with a responsive layout that adapts to:
- * - **Compact Portrait Phones (`maxWidth < 600.dp`)**:
- *   Single-column scrollable layout with a compact top bar, horizontal 3-card Score/High Score/Timer
- *   bar ([CompactScoreAndTimerRow]), height-aware [CrosswordBoardGrid] and [TileKeyboardRack] so both
- *   board and keyboard fit on screen at once, `Validate`/`Quit` buttons, a side-by-side row for
- *   [WordsListCard] and [BoardOptionsColumn], and [PreviousGamesColumn] below.
- * - **Landscape Phones (`maxWidth >= 600.dp && maxHeight < 520.dp`)**:
- *   Side-by-side layout placing the [CrosswordBoardGrid] on the left, the score row + keyboard +
- *   actions + words/history in the center, and [BoardOptionsColumn] on the right.
- * - **Medium Tablets (`600.dp <= maxWidth < 960.dp && maxHeight >= 520.dp`)**:
- *   Three-column gameplay area ([ScoreAndWordsColumn], center board + keyboard, [BoardOptionsColumn])
- *   with [PreviousGamesColumn] stacked underneath so the board never gets squeezed.
- * - **Large Tablets / Desktop (`maxWidth >= 960.dp && maxHeight >= 520.dp`)**:
- *   Full 4-column layout ([PreviousGamesColumn], [ScoreAndWordsColumn], center board + keyboard,
- *   and [BoardOptionsColumn]).
+ * Main gameplay screen of WordsWorth featuring three tabs along the top under the title bar:
+ * - **"Previous"**: Displays that language's list of previous saved games ([PreviousGamesColumn]).
+ * - **"Current"**: Displays the active game board ([CrosswordBoardGrid]), the keyboard rack
+ *   ([TileKeyboardRack]), the score and timer row, action buttons, and the list of formed words
+ *   ([WordsListCard]).
+ * - **"Modes"**: Displays grid-size options (6x6, 9x9, 12x12), board pattern options (All-blank,
+ *   Random pattern), and Time Attack mode configuration ([ModesTabContent]).
  */
 @Composable
 fun WordsWorthGameScreen(
@@ -171,6 +170,7 @@ fun WordsWorthGameScreen(
         savedGames.filter { it.language == gameLanguage }
     }
     val highScoreEntry = currentLanguageSavedGames.maxByOrNull { it.score }
+    var selectedTabIndex by rememberSaveable { mutableIntStateOf(1) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -224,413 +224,425 @@ fun WordsWorthGameScreen(
 
                 Spacer(modifier = Modifier.height(if (isCompactBoard) 2.dp else 4.dp))
 
-                when {
-                    // =========================================================================
-                    // 1. PHONE PORTRAIT / COMPACT WIDTH (< 600.dp)
-                    // =========================================================================
-                    isCompactWidth -> {
-                        // Size the board so the Top Bar + Score Row + Board + Keyboard + Validate/Quit
-                        // all fit comfortably on screen without needing to scroll during active play.
-                        val maxBoardHeight = (screenHeight - 295.dp).coerceIn(210.dp, 370.dp)
-                        val boardSideDp = min(screenWidth - 16.dp, maxBoardHeight)
-
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(rememberScrollState()),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            // Compact 3-card row: High Score | Score | Timer / Time Attack
-                            CompactScoreAndTimerRow(
-                                highScoreEntry = highScoreEntry,
-                                onClickHighScore = onClickSavedGame,
-                                tallyResult = tallyResult,
-                                elapsedSecondsProvider = elapsedSecondsProvider,
-                                timeAttackMinutes = timeAttackMinutes,
-                                isBoardLocked = isBoardLocked
-                            )
-
-                            // Square Crossword Board
-                            Box(
-                                modifier = Modifier.size(boardSideDp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CrosswordBoardGrid(
-                                    board = board,
-                                    boardSize = boardSize,
-                                    focusedCell = focusedCell,
-                                    focusDirection = focusDirection,
-                                    hoveredCell = hoveredCell,
-                                    tallyResult = tallyResult,
-                                    boardPadding = boardPadding,
-                                    cellSpacing = cellSpacing,
-                                    onGridBoundsChanged = { gridBoundsInRoot = it },
-                                    onBoardCellTap = onBoardCellTap,
-                                    onClearCell = { r, c -> onUpdateCell(r, c, null) },
-                                    isCompact = true,
-                                    pendingRomaji = pendingRomaji,
-                                    gameLanguage = gameLanguage
-                                )
-                            }
-
-                            // Direction / Locked Tip
-                            Text(
-                                text = if (isBoardLocked) {
-                                    "Time's up! Board locked — tap Quit to save or Clear to play again."
-                                } else {
-                                    "Tip: Tap the arrow to toggle direction."
-                                },
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isBoardLocked) {
-                                    WordsWorthColors.InvalidWordText
-                                } else {
-                                    WordsWorthColors.FocusedCursorBlue
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            // Compact On-Screen Tile Keyboard
-                            TileKeyboardRack(
-                                keyboardLayout = keyboardLayout,
-                                selectedLetter = selectedLetter,
-                                isBoardLocked = isBoardLocked,
-                                dragThresholdPx = dragThresholdPx,
-                                onKeyboardOriginChanged = { keyboardOriginInRoot = it },
-                                onKeyboardInput = onKeyboardInput,
-                                isCompact = true,
-                                gameLanguage = gameLanguage,
-                                onKeyAction = onKeyAction,
-                                onDragStart = { letter, localPos ->
-                                    draggingLetter = letter
-                                    dragPositionInRoot = keyboardOriginInRoot + localPos
-                                },
-                                onDragMove = { localPos ->
-                                    dragPositionInRoot = keyboardOriginInRoot + localPos
-                                },
-                                onDragEnd = { letter, localPos, undoPlacement ->
-                                    val target = cellAtRootPosition(keyboardOriginInRoot + localPos)
-                                    if (target != null) {
-                                        onDropLetterOnCell(
-                                            target.first,
-                                            target.second,
-                                            letter,
-                                            undoPlacement
-                                        )
-                                    }
-                                    draggingLetter = null
-                                }
-                            )
-
-                            // Validate & Quit Action Buttons
-                            ValidateAndQuitRow(
-                                isDictionaryLoaded = isDictionaryLoaded,
-                                onValidate = onValidate,
-                                onQuitClick = onQuitClick,
-                                isCompact = true
-                            )
-
-                            // Side-by-side Words Card (left) + Board Options Column (right)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 2.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                WordsListCard(
-                                    tallyResult = tallyResult,
-                                    onRequestWhitelistWord = onRequestWhitelistWord,
-                                    modifier = Modifier.weight(1f),
-                                    inScrollableParent = true
-                                )
-
-                                BoardOptionsColumn(
-                                    boardSize = boardSize,
-                                    onChangeBoardSize = onChangeBoardSize,
-                                    isRandomPatternMode = isRandomPatternMode,
-                                    allBlankThumb = allBlankThumb,
-                                    randomPatternThumb = randomPatternThumb,
-                                    onSelectAllBlank = onSelectAllBlank,
-                                    onSelectRandomPattern = onSelectRandomPattern,
-                                    timeAttackMinutes = timeAttackMinutes,
-                                    onClickTimeAttack = onClickTimeAttack,
-                                    isCompact = true,
-                                    modifier = Modifier.width(136.dp)
-                                )
-                            }
-
-                            // Previous Games History Card (full width at bottom)
-                            PreviousGamesColumn(
-                                savedGames = currentLanguageSavedGames,
-                                onClickSavedGame = onClickSavedGame,
-                                onDeleteSavedGame = onDeleteSavedGame,
-                                thumbnailSize = 96.dp,
-                                inScrollableParent = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 8.dp)
-                            )
-                        }
-                    }
-
-                    // =========================================================================
-                    // 2. PHONE LANDSCAPE / SHORT HEIGHT (maxWidth >= 600.dp && maxHeight < 520.dp)
-                    // =========================================================================
-                    isShortLandscape -> {
-                        val boardSideDp = (screenHeight - 52.dp).coerceIn(190.dp, 360.dp)
-                        Row(
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            // Left: Square Board fitted to landscape height
-                            Box(
-                                modifier = Modifier.size(boardSideDp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CrosswordBoardGrid(
-                                    board = board,
-                                    boardSize = boardSize,
-                                    focusedCell = focusedCell,
-                                    focusDirection = focusDirection,
-                                    hoveredCell = hoveredCell,
-                                    tallyResult = tallyResult,
-                                    boardPadding = boardPadding,
-                                    cellSpacing = cellSpacing,
-                                    onGridBoundsChanged = { gridBoundsInRoot = it },
-                                    onBoardCellTap = onBoardCellTap,
-                                    onClearCell = { r, c -> onUpdateCell(r, c, null) },
-                                    isCompact = true,
-                                    pendingRomaji = pendingRomaji,
-                                    gameLanguage = gameLanguage
-                                )
-                            }
-
-                            // Center: Score Row + Keyboard + Validate/Quit + Words + Previous Games
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                CompactScoreAndTimerRow(
-                                    highScoreEntry = highScoreEntry,
-                                    onClickHighScore = onClickSavedGame,
-                                    tallyResult = tallyResult,
-                                    elapsedSecondsProvider = elapsedSecondsProvider,
-                                    timeAttackMinutes = timeAttackMinutes,
-                                    isBoardLocked = isBoardLocked
-                                )
-
+                // Three tabs along the top, under the title row: Previous, Current, Modes
+                TabRow(
+                    selectedTabIndex = selectedTabIndex,
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    divider = {
+                        HorizontalDivider(
+                            color = WordsWorthColors.WarmDivider,
+                            thickness = 1.dp
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val tabTitles = listOf("Previous", "Current", "Modes")
+                    tabTitles.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTabIndex == index,
+                            onClick = { selectedTabIndex = index },
+                            text = {
                                 Text(
-                                    text = if (isBoardLocked) {
-                                        "Time's up! Board locked — tap Quit to save or Clear to play again."
+                                    text = title,
+                                    fontWeight = if (selectedTabIndex == index) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                    fontSize = if (isCompactBoard) 14.sp else 16.sp,
+                                    color = if (selectedTabIndex == index) {
+                                        MaterialTheme.colorScheme.primary
                                     } else {
-                                        "Tip: Tap the arrow to toggle direction."
-                                    },
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isBoardLocked) {
-                                        WordsWorthColors.InvalidWordText
-                                    } else {
-                                        WordsWorthColors.FocusedCursorBlue
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-
-                                TileKeyboardRack(
-                                    keyboardLayout = keyboardLayout,
-                                    selectedLetter = selectedLetter,
-                                    isBoardLocked = isBoardLocked,
-                                    dragThresholdPx = dragThresholdPx,
-                                    onKeyboardOriginChanged = { keyboardOriginInRoot = it },
-                                    onKeyboardInput = onKeyboardInput,
-                                    isCompact = true,
-                                    gameLanguage = gameLanguage,
-                                    onKeyAction = onKeyAction,
-                                    onDragStart = { letter, localPos ->
-                                        draggingLetter = letter
-                                        dragPositionInRoot = keyboardOriginInRoot + localPos
-                                    },
-                                    onDragMove = { localPos ->
-                                        dragPositionInRoot = keyboardOriginInRoot + localPos
-                                    },
-                                    onDragEnd = { letter, localPos, undoPlacement ->
-                                        val target = cellAtRootPosition(keyboardOriginInRoot + localPos)
-                                        if (target != null) {
-                                            onDropLetterOnCell(
-                                                target.first,
-                                                target.second,
-                                                letter,
-                                                undoPlacement
-                                            )
-                                        }
-                                        draggingLetter = null
+                                        MaterialTheme.colorScheme.onSurfaceVariant
                                     }
                                 )
+                            }
+                        )
+                    }
+                }
 
-                                ValidateAndQuitRow(
-                                    isDictionaryLoaded = isDictionaryLoaded,
-                                    onValidate = onValidate,
-                                    onQuitClick = onQuitClick,
-                                    isCompact = true
-                                )
+                Spacer(modifier = Modifier.height(if (isCompactBoard) 4.dp else 6.dp))
 
-                                WordsListCard(
-                                    tallyResult = tallyResult,
-                                    onRequestWhitelistWord = onRequestWhitelistWord,
-                                    inScrollableParent = true
-                                )
-
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    when (selectedTabIndex) {
+                        // =====================================================================
+                        // TAB 0: PREVIOUS (Language's list of previous games)
+                        // =====================================================================
+                        0 -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.TopCenter
+                            ) {
                                 PreviousGamesColumn(
                                     savedGames = currentLanguageSavedGames,
-                                    onClickSavedGame = onClickSavedGame,
+                                    onClickSavedGame = { entry ->
+                                        onClickSavedGame(entry)
+                                        selectedTabIndex = 1
+                                    },
                                     onDeleteSavedGame = onDeleteSavedGame,
-                                    thumbnailSize = 96.dp,
-                                    inScrollableParent = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-
-                            // Right: Scrollable Board Options column
-                            Column(
-                                modifier = Modifier
-                                    .width(132.dp)
-                                    .fillMaxHeight()
-                                    .verticalScroll(rememberScrollState())
-                            ) {
-                                BoardOptionsColumn(
-                                    boardSize = boardSize,
-                                    onChangeBoardSize = onChangeBoardSize,
-                                    isRandomPatternMode = isRandomPatternMode,
-                                    allBlankThumb = allBlankThumb,
-                                    randomPatternThumb = randomPatternThumb,
-                                    onSelectAllBlank = onSelectAllBlank,
-                                    onSelectRandomPattern = onSelectRandomPattern,
-                                    timeAttackMinutes = timeAttackMinutes,
-                                    onClickTimeAttack = onClickTimeAttack,
-                                    isCompact = true,
-                                    modifier = Modifier.fillMaxWidth()
+                                    thumbnailSize = if (isCompactBoard) 100.dp else 160.dp,
+                                    inScrollableParent = false,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .widthIn(max = 680.dp)
                                 )
                             }
                         }
-                    }
 
-                    // =========================================================================
-                    // 3. MEDIUM TABLET / FOLDABLE (600.dp <= maxWidth < 960.dp)
-                    // =========================================================================
-                    screenWidth < 960.dp -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.Top,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                ScoreAndWordsColumn(
-                                    highScoreEntry = highScoreEntry,
-                                    onClickHighScore = onClickSavedGame,
-                                    tallyResult = tallyResult,
-                                    elapsedSecondsProvider = elapsedSecondsProvider,
-                                    timeAttackMinutes = timeAttackMinutes,
-                                    isBoardLocked = isBoardLocked,
-                                    onRequestWhitelistWord = onRequestWhitelistWord,
-                                    modifier = Modifier
-                                        .width(156.dp)
-                                        .height(540.dp)
-                                        .padding(top = boardPadding)
-                                )
+                        // =====================================================================
+                        // TAB 1: CURRENT (Game board, keyboard, score row, and words list)
+                        // =====================================================================
+                        1 -> {
+                            when {
+                                // --- A. Compact Phone Portrait (< 600.dp) ---
+                                isCompactWidth -> {
+                                    val maxBoardHeight = (screenHeight - 340.dp).coerceIn(210.dp, 370.dp)
+                                    val boardSideDp = min(screenWidth - 16.dp, maxBoardHeight)
 
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .widthIn(max = 460.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    CrosswordBoardGrid(
-                                        board = board,
-                                        boardSize = boardSize,
-                                        focusedCell = focusedCell,
-                                        focusDirection = focusDirection,
-                                        hoveredCell = hoveredCell,
-                                        tallyResult = tallyResult,
-                                        boardPadding = boardPadding,
-                                        cellSpacing = cellSpacing,
-                                        onGridBoundsChanged = { gridBoundsInRoot = it },
-                                        onBoardCellTap = onBoardCellTap,
-                                        onClearCell = { r, c -> onUpdateCell(r, c, null) },
-                                        pendingRomaji = pendingRomaji,
-                                        gameLanguage = gameLanguage
-                                    )
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .verticalScroll(rememberScrollState()),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        // Compact 3-card row: High Score | Score | Timer / Time Attack
+                                        CompactScoreAndTimerRow(
+                                            highScoreEntry = highScoreEntry,
+                                            onClickHighScore = onClickSavedGame,
+                                            tallyResult = tallyResult,
+                                            elapsedSecondsProvider = elapsedSecondsProvider,
+                                            timeAttackMinutes = timeAttackMinutes,
+                                            isBoardLocked = isBoardLocked
+                                        )
 
-                                    Spacer(modifier = Modifier.height(6.dp))
-
-                                    Text(
-                                        text = if (isBoardLocked) {
-                                            "Time's up! Board locked — tap Quit to save or Clear to play again."
-                                        } else {
-                                            "Tip: Tap the arrow to toggle direction."
-                                        },
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isBoardLocked) {
-                                            WordsWorthColors.InvalidWordText
-                                        } else {
-                                            WordsWorthColors.FocusedCursorBlue
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-
-                                    Spacer(modifier = Modifier.height(4.dp))
-
-                                    TileKeyboardRack(
-                                        keyboardLayout = keyboardLayout,
-                                        selectedLetter = selectedLetter,
-                                        isBoardLocked = isBoardLocked,
-                                        dragThresholdPx = dragThresholdPx,
-                                        onKeyboardOriginChanged = { keyboardOriginInRoot = it },
-                                        onKeyboardInput = onKeyboardInput,
-                                        gameLanguage = gameLanguage,
-                                        onKeyAction = onKeyAction,
-                                        onDragStart = { letter, localPos ->
-                                            draggingLetter = letter
-                                            dragPositionInRoot = keyboardOriginInRoot + localPos
-                                        },
-                                        onDragMove = { localPos ->
-                                            dragPositionInRoot = keyboardOriginInRoot + localPos
-                                        },
-                                        onDragEnd = { letter, localPos, undoPlacement ->
-                                            val target = cellAtRootPosition(keyboardOriginInRoot + localPos)
-                                            if (target != null) {
-                                                onDropLetterOnCell(
-                                                    target.first,
-                                                    target.second,
-                                                    letter,
-                                                    undoPlacement
-                                                )
-                                            }
-                                            draggingLetter = null
+                                        // Square Crossword Board
+                                        Box(
+                                            modifier = Modifier.size(boardSideDp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            CrosswordBoardGrid(
+                                                board = board,
+                                                boardSize = boardSize,
+                                                focusedCell = focusedCell,
+                                                focusDirection = focusDirection,
+                                                hoveredCell = hoveredCell,
+                                                tallyResult = tallyResult,
+                                                boardPadding = boardPadding,
+                                                cellSpacing = cellSpacing,
+                                                onGridBoundsChanged = { gridBoundsInRoot = it },
+                                                onBoardCellTap = onBoardCellTap,
+                                                onClearCell = { r, c -> onUpdateCell(r, c, null) },
+                                                isCompact = true,
+                                                pendingRomaji = pendingRomaji,
+                                                gameLanguage = gameLanguage
+                                            )
                                         }
-                                    )
 
-                                    Spacer(modifier = Modifier.height(10.dp))
+                                        // Direction / Locked Tip
+                                        Text(
+                                            text = if (isBoardLocked) {
+                                                "Time's up! Board locked — tap Quit to save or Clear to play again."
+                                            } else {
+                                                "Tip: Tap the arrow to toggle direction."
+                                            },
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isBoardLocked) {
+                                                WordsWorthColors.InvalidWordText
+                                            } else {
+                                                WordsWorthColors.FocusedCursorBlue
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
 
-                                    ValidateAndQuitRow(
-                                        isDictionaryLoaded = isDictionaryLoaded,
-                                        onValidate = onValidate,
-                                        onQuitClick = onQuitClick,
-                                        isCompact = false
-                                    )
+                                        // Compact On-Screen Tile Keyboard
+                                        TileKeyboardRack(
+                                            keyboardLayout = keyboardLayout,
+                                            selectedLetter = selectedLetter,
+                                            isBoardLocked = isBoardLocked,
+                                            dragThresholdPx = dragThresholdPx,
+                                            onKeyboardOriginChanged = { keyboardOriginInRoot = it },
+                                            onKeyboardInput = onKeyboardInput,
+                                            isCompact = true,
+                                            gameLanguage = gameLanguage,
+                                            onKeyAction = onKeyAction,
+                                            onDragStart = { letter, localPos ->
+                                                draggingLetter = letter
+                                                dragPositionInRoot = keyboardOriginInRoot + localPos
+                                            },
+                                            onDragMove = { localPos ->
+                                                dragPositionInRoot = keyboardOriginInRoot + localPos
+                                            },
+                                            onDragEnd = { letter, localPos, undoPlacement ->
+                                                val target = cellAtRootPosition(keyboardOriginInRoot + localPos)
+                                                if (target != null) {
+                                                    onDropLetterOnCell(
+                                                        target.first,
+                                                        target.second,
+                                                        letter,
+                                                        undoPlacement
+                                                    )
+                                                }
+                                                draggingLetter = null
+                                            }
+                                        )
+
+                                        // Validate & Quit Action Buttons
+                                        ValidateAndQuitRow(
+                                            isDictionaryLoaded = isDictionaryLoaded,
+                                            onValidate = onValidate,
+                                            onQuitClick = onQuitClick,
+                                            isCompact = true
+                                        )
+
+                                        // Full-width Words List Card
+                                        WordsListCard(
+                                            tallyResult = tallyResult,
+                                            onRequestWhitelistWord = onRequestWhitelistWord,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 2.dp, bottom = 8.dp),
+                                            inScrollableParent = true
+                                        )
+                                    }
                                 }
 
-                                BoardOptionsColumn(
+                                // --- B. Phone Landscape / Short Height (maxWidth >= 600.dp && maxHeight < 520.dp) ---
+                                isShortLandscape -> {
+                                    val boardSideDp = (screenHeight - 96.dp).coerceIn(190.dp, 360.dp)
+                                    Row(
+                                        modifier = Modifier.fillMaxSize(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        // Left: Square Board fitted to landscape height
+                                        Box(
+                                            modifier = Modifier.size(boardSideDp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            CrosswordBoardGrid(
+                                                board = board,
+                                                boardSize = boardSize,
+                                                focusedCell = focusedCell,
+                                                focusDirection = focusDirection,
+                                                hoveredCell = hoveredCell,
+                                                tallyResult = tallyResult,
+                                                boardPadding = boardPadding,
+                                                cellSpacing = cellSpacing,
+                                                onGridBoundsChanged = { gridBoundsInRoot = it },
+                                                onBoardCellTap = onBoardCellTap,
+                                                onClearCell = { r, c -> onUpdateCell(r, c, null) },
+                                                isCompact = true,
+                                                pendingRomaji = pendingRomaji,
+                                                gameLanguage = gameLanguage
+                                            )
+                                        }
+
+                                        // Right: Score Row + Keyboard + Validate/Quit + Words Card
+                                        Column(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxHeight()
+                                                .verticalScroll(rememberScrollState()),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            CompactScoreAndTimerRow(
+                                                highScoreEntry = highScoreEntry,
+                                                onClickHighScore = onClickSavedGame,
+                                                tallyResult = tallyResult,
+                                                elapsedSecondsProvider = elapsedSecondsProvider,
+                                                timeAttackMinutes = timeAttackMinutes,
+                                                isBoardLocked = isBoardLocked
+                                            )
+
+                                            Text(
+                                                text = if (isBoardLocked) {
+                                                    "Time's up! Board locked — tap Quit to save or Clear to play again."
+                                                } else {
+                                                    "Tip: Tap the arrow to toggle direction."
+                                                },
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isBoardLocked) {
+                                                    WordsWorthColors.InvalidWordText
+                                                } else {
+                                                    WordsWorthColors.FocusedCursorBlue
+                                                },
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+
+                                            TileKeyboardRack(
+                                                keyboardLayout = keyboardLayout,
+                                                selectedLetter = selectedLetter,
+                                                isBoardLocked = isBoardLocked,
+                                                dragThresholdPx = dragThresholdPx,
+                                                onKeyboardOriginChanged = { keyboardOriginInRoot = it },
+                                                onKeyboardInput = onKeyboardInput,
+                                                isCompact = true,
+                                                gameLanguage = gameLanguage,
+                                                onKeyAction = onKeyAction,
+                                                onDragStart = { letter, localPos ->
+                                                    draggingLetter = letter
+                                                    dragPositionInRoot = keyboardOriginInRoot + localPos
+                                                },
+                                                onDragMove = { localPos ->
+                                                    dragPositionInRoot = keyboardOriginInRoot + localPos
+                                                },
+                                                onDragEnd = { letter, localPos, undoPlacement ->
+                                                    val target = cellAtRootPosition(keyboardOriginInRoot + localPos)
+                                                    if (target != null) {
+                                                        onDropLetterOnCell(
+                                                            target.first,
+                                                            target.second,
+                                                            letter,
+                                                            undoPlacement
+                                                        )
+                                                    }
+                                                    draggingLetter = null
+                                                }
+                                            )
+
+                                            ValidateAndQuitRow(
+                                                isDictionaryLoaded = isDictionaryLoaded,
+                                                onValidate = onValidate,
+                                                onQuitClick = onQuitClick,
+                                                isCompact = true
+                                            )
+
+                                            WordsListCard(
+                                                tallyResult = tallyResult,
+                                                onRequestWhitelistWord = onRequestWhitelistWord,
+                                                inScrollableParent = true,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(bottom = 8.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // --- C. Tablet & Desktop (maxWidth >= 600.dp && maxHeight >= 520.dp) ---
+                                else -> {
+                                    Row(
+                                        modifier = Modifier.fillMaxSize(),
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        // Left column: Score, High Score, Timer, and Words list
+                                        ScoreAndWordsColumn(
+                                            highScoreEntry = highScoreEntry,
+                                            onClickHighScore = onClickSavedGame,
+                                            tallyResult = tallyResult,
+                                            elapsedSecondsProvider = elapsedSecondsProvider,
+                                            timeAttackMinutes = timeAttackMinutes,
+                                            isBoardLocked = isBoardLocked,
+                                            onRequestWhitelistWord = onRequestWhitelistWord,
+                                            modifier = Modifier
+                                                .width(if (screenWidth >= 960.dp) 240.dp else 190.dp)
+                                                .fillMaxHeight()
+                                                .padding(top = boardPadding)
+                                        )
+
+                                        // Center/Right column: Board, Tip, Keyboard, Validate & Quit
+                                        Column(
+                                            modifier = Modifier
+                                                .widthIn(max = 507.dp)
+                                                .fillMaxWidth(if (screenWidth >= 960.dp) 0.65f else 0.72f)
+                                                .fillMaxHeight()
+                                                .verticalScroll(rememberScrollState()),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            CrosswordBoardGrid(
+                                                board = board,
+                                                boardSize = boardSize,
+                                                focusedCell = focusedCell,
+                                                focusDirection = focusDirection,
+                                                hoveredCell = hoveredCell,
+                                                tallyResult = tallyResult,
+                                                boardPadding = boardPadding,
+                                                cellSpacing = cellSpacing,
+                                                onGridBoundsChanged = { gridBoundsInRoot = it },
+                                                onBoardCellTap = onBoardCellTap,
+                                                onClearCell = { r, c -> onUpdateCell(r, c, null) },
+                                                pendingRomaji = pendingRomaji,
+                                                gameLanguage = gameLanguage
+                                            )
+
+                                            Spacer(modifier = Modifier.height(6.dp))
+
+                                            Text(
+                                                text = if (isBoardLocked) {
+                                                    "Time's up! Board locked — tap Quit to save or Clear to play again."
+                                                } else {
+                                                    "Tip: Tap the arrow to toggle direction."
+                                                },
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isBoardLocked) {
+                                                    WordsWorthColors.InvalidWordText
+                                                } else {
+                                                    WordsWorthColors.FocusedCursorBlue
+                                                },
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+
+                                            Spacer(modifier = Modifier.height(4.dp))
+
+                                            TileKeyboardRack(
+                                                keyboardLayout = keyboardLayout,
+                                                selectedLetter = selectedLetter,
+                                                isBoardLocked = isBoardLocked,
+                                                dragThresholdPx = dragThresholdPx,
+                                                onKeyboardOriginChanged = { keyboardOriginInRoot = it },
+                                                onKeyboardInput = onKeyboardInput,
+                                                gameLanguage = gameLanguage,
+                                                onKeyAction = onKeyAction,
+                                                onDragStart = { letter, localPos ->
+                                                    draggingLetter = letter
+                                                    dragPositionInRoot = keyboardOriginInRoot + localPos
+                                                },
+                                                onDragMove = { localPos ->
+                                                    dragPositionInRoot = keyboardOriginInRoot + localPos
+                                                },
+                                                onDragEnd = { letter, localPos, undoPlacement ->
+                                                    val target = cellAtRootPosition(keyboardOriginInRoot + localPos)
+                                                    if (target != null) {
+                                                        onDropLetterOnCell(
+                                                            target.first,
+                                                            target.second,
+                                                            letter,
+                                                            undoPlacement
+                                                        )
+                                                    }
+                                                    draggingLetter = null
+                                                }
+                                            )
+
+                                            Spacer(modifier = Modifier.height(10.dp))
+
+                                            ValidateAndQuitRow(
+                                                isDictionaryLoaded = isDictionaryLoaded,
+                                                onValidate = onValidate,
+                                                onQuitClick = onQuitClick,
+                                                isCompact = false
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // =====================================================================
+                        // TAB 2: MODES (Grid-size options, blank/random options, and Time Attack)
+                        // =====================================================================
+                        2 -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.TopCenter
+                            ) {
+                                ModesTabContent(
                                     boardSize = boardSize,
                                     onChangeBoardSize = onChangeBoardSize,
                                     isRandomPatternMode = isRandomPatternMode,
@@ -640,171 +652,10 @@ fun WordsWorthGameScreen(
                                     onSelectRandomPattern = onSelectRandomPattern,
                                     timeAttackMinutes = timeAttackMinutes,
                                     onClickTimeAttack = onClickTimeAttack,
-                                    isCompact = true,
+                                    isCompact = isCompactBoard,
                                     modifier = Modifier
-                                        .width(140.dp)
-                                        .padding(top = boardPadding)
-                                )
-                            }
-
-                            PreviousGamesColumn(
-                                savedGames = currentLanguageSavedGames,
-                                onClickSavedGame = onClickSavedGame,
-                                onDeleteSavedGame = onDeleteSavedGame,
-                                thumbnailSize = 128.dp,
-                                inScrollableParent = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-
-                    // =========================================================================
-                    // 4. LARGE TABLET / DESKTOP (maxWidth >= 960.dp)
-                    // =========================================================================
-                    else -> {
-                        val isExtraWide = screenWidth >= 1180.dp
-                        val prevGamesWidth = if (isExtraWide) 428.dp else 280.dp
-                        val prevGamesThumbSize = if (isExtraWide) 208.dp else 132.dp
-
-                        Row(
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            // LEFT COLUMN: Running list of saved board mini-screenshots + scores
-                            PreviousGamesColumn(
-                                savedGames = currentLanguageSavedGames,
-                                onClickSavedGame = onClickSavedGame,
-                                onDeleteSavedGame = onDeleteSavedGame,
-                                thumbnailSize = prevGamesThumbSize,
-                                inScrollableParent = false,
-                                modifier = Modifier
-                                    .width(prevGamesWidth)
-                                    .fillMaxHeight()
-                            )
-
-                            // RIGHT AREA: Score/Words column, Center Board + Keyboard, Right Board Options column
-                            Row(
-                                verticalAlignment = Alignment.Top,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                            ) {
-                                // 1. Score, High Score, Timer, and Validated Words column
-                                ScoreAndWordsColumn(
-                                    highScoreEntry = highScoreEntry,
-                                    onClickHighScore = onClickSavedGame,
-                                    tallyResult = tallyResult,
-                                    elapsedSecondsProvider = elapsedSecondsProvider,
-                                    timeAttackMinutes = timeAttackMinutes,
-                                    isBoardLocked = isBoardLocked,
-                                    onRequestWhitelistWord = onRequestWhitelistWord,
-                                    modifier = Modifier
-                                        .width(172.dp)
-                                        .fillMaxHeight()
-                                        .padding(top = boardPadding)
-                                )
-
-                                // 2. Center column: Crossword Board, Direction Tip, Keyboard Rack, Validate & Quit buttons
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f, fill = false)
-                                        .widthIn(max = 507.dp)
                                         .fillMaxWidth()
-                                        .fillMaxHeight()
-                                        .verticalScroll(rememberScrollState()),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    CrosswordBoardGrid(
-                                        board = board,
-                                        boardSize = boardSize,
-                                        focusedCell = focusedCell,
-                                        focusDirection = focusDirection,
-                                        hoveredCell = hoveredCell,
-                                        tallyResult = tallyResult,
-                                        boardPadding = boardPadding,
-                                        cellSpacing = cellSpacing,
-                                        onGridBoundsChanged = { gridBoundsInRoot = it },
-                                        onBoardCellTap = onBoardCellTap,
-                                        onClearCell = { r, c -> onUpdateCell(r, c, null) },
-                                        pendingRomaji = pendingRomaji,
-                                        gameLanguage = gameLanguage
-                                    )
-
-                                    Spacer(modifier = Modifier.height(6.dp))
-
-                                    Text(
-                                        text = if (isBoardLocked) {
-                                            "Time's up! Board locked — tap Quit to save or Clear to play again."
-                                        } else {
-                                            "Tip: Tap the arrow to toggle direction."
-                                        },
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isBoardLocked) {
-                                            WordsWorthColors.InvalidWordText
-                                        } else {
-                                            WordsWorthColors.FocusedCursorBlue
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-
-                                    Spacer(modifier = Modifier.height(4.dp))
-
-                                    TileKeyboardRack(
-                                        keyboardLayout = keyboardLayout,
-                                        selectedLetter = selectedLetter,
-                                        isBoardLocked = isBoardLocked,
-                                        dragThresholdPx = dragThresholdPx,
-                                        onKeyboardOriginChanged = { keyboardOriginInRoot = it },
-                                        onKeyboardInput = onKeyboardInput,
-                                        gameLanguage = gameLanguage,
-                                        onKeyAction = onKeyAction,
-                                        onDragStart = { letter, localPos ->
-                                            draggingLetter = letter
-                                            dragPositionInRoot = keyboardOriginInRoot + localPos
-                                        },
-                                        onDragMove = { localPos ->
-                                            dragPositionInRoot = keyboardOriginInRoot + localPos
-                                        },
-                                        onDragEnd = { letter, localPos, undoPlacement ->
-                                            val target = cellAtRootPosition(keyboardOriginInRoot + localPos)
-                                            if (target != null) {
-                                                onDropLetterOnCell(
-                                                    target.first,
-                                                    target.second,
-                                                    letter,
-                                                    undoPlacement
-                                                )
-                                            }
-                                            draggingLetter = null
-                                        }
-                                    )
-
-                                    Spacer(modifier = Modifier.height(10.dp))
-
-                                    ValidateAndQuitRow(
-                                        isDictionaryLoaded = isDictionaryLoaded,
-                                        onValidate = onValidate,
-                                        onQuitClick = onQuitClick,
-                                        isCompact = false
-                                    )
-                                }
-
-                                // 3. Right column: Board Size, Pattern Options, and Time Attack button
-                                BoardOptionsColumn(
-                                    boardSize = boardSize,
-                                    onChangeBoardSize = onChangeBoardSize,
-                                    isRandomPatternMode = isRandomPatternMode,
-                                    allBlankThumb = allBlankThumb,
-                                    randomPatternThumb = randomPatternThumb,
-                                    onSelectAllBlank = onSelectAllBlank,
-                                    onSelectRandomPattern = onSelectRandomPattern,
-                                    timeAttackMinutes = timeAttackMinutes,
-                                    onClickTimeAttack = onClickTimeAttack,
-                                    modifier = Modifier
-                                        .width(156.dp)
-                                        .padding(top = boardPadding)
+                                        .widthIn(max = 520.dp)
                                 )
                             }
                         }

@@ -8,6 +8,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -913,6 +915,217 @@ fun BoardOptionsColumn(
                     color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Tab content for the "Modes" tab containing:
+ * 1. Grid-size options (6x6, 9x9, 12x12).
+ * 2. Board Pattern options ("All-blank", "Random pattern").
+ * 3. Time Attack mode options.
+ */
+@Composable
+fun ModesTabContent(
+    boardSize: Int,
+    onChangeBoardSize: (Int) -> Unit,
+    isRandomPatternMode: Boolean,
+    allBlankThumb: ImageBitmap,
+    randomPatternThumb: ImageBitmap,
+    onSelectAllBlank: () -> Unit,
+    onSelectRandomPattern: () -> Unit,
+    timeAttackMinutes: Int?,
+    onClickTimeAttack: () -> Unit,
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false
+) {
+    Column(
+        modifier = modifier
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // 1. Grid Size Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = "Grid Size",
+                    fontSize = if (isCompact) 16.sp else 18.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Choose crossword board dimensions",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                HorizontalDivider(
+                    color = WordsWorthColors.WarmDivider,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    WordsWorthLogic.BOARD_SIZES.forEach { sizeOption ->
+                        val isSelected = boardSize == sizeOption
+                        if (isSelected) {
+                            Button(
+                                onClick = { onChangeBoardSize(sizeOption) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                ),
+                                contentPadding = PaddingValues(vertical = 10.dp)
+                            ) {
+                                Text(
+                                    text = "${sizeOption}×${sizeOption}",
+                                    fontSize = if (isCompact) 14.sp else 16.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = { onChangeBoardSize(sizeOption) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(vertical = 10.dp)
+                            ) {
+                                Text(
+                                    text = "${sizeOption}×${sizeOption}",
+                                    fontSize = if (isCompact) 14.sp else 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Board Pattern Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = "Board Pattern",
+                    fontSize = if (isCompact) 16.sp else 18.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Choose starting grid layout",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                HorizontalDivider(
+                    color = WordsWorthColors.WarmDivider,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PatternOptionButton(
+                        label = "All-blank",
+                        thumbnail = allBlankThumb,
+                        isSelected = !isRandomPatternMode,
+                        onClick = onSelectAllBlank,
+                        isCompact = isCompact
+                    )
+                    PatternOptionButton(
+                        label = "Random pattern",
+                        thumbnail = randomPatternThumb,
+                        isSelected = isRandomPatternMode,
+                        onClick = onSelectRandomPattern,
+                        isCompact = isCompact
+                    )
+                }
+            }
+        }
+
+        // 3. Time Attack Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = "Time Attack",
+                    fontSize = if (isCompact) 16.sp else 18.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = if (timeAttackMinutes != null) {
+                        "Active countdown: $timeAttackMinutes minute${if (timeAttackMinutes > 1) "s" else ""}"
+                    } else {
+                        "Untimed: Standard untimed play"
+                    },
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                HorizontalDivider(
+                    color = WordsWorthColors.WarmDivider,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+                val isTimeAttackActive = timeAttackMinutes != null
+                val timeAttackLabel = if (timeAttackMinutes != null) {
+                    "Time Attack Active (${timeAttackMinutes} min${if (timeAttackMinutes > 1) "s" else ""}) — Change"
+                } else {
+                    "Start Time Attack Mode"
+                }
+                if (isTimeAttackActive) {
+                    Button(
+                        onClick = onClickTimeAttack,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = WordsWorthColors.TimeAttackActiveTeal
+                        ),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) {
+                        Text(
+                            text = timeAttackLabel,
+                            fontSize = if (isCompact) 14.sp else 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = onClickTimeAttack,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) {
+                        Text(
+                            text = timeAttackLabel,
+                            fontSize = if (isCompact) 14.sp else 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
             }
         }
     }
