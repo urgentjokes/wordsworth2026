@@ -56,6 +56,25 @@ enum class ScoringMode(val label: String, val description: String) {
 }
 
 /**
+ * Rule mode for Japanese terminal kana scoring:
+ * - [CABOOSE]: All words ending in any kana from the Caboose set (-う row, て/で) score that final
+ *   character as 1 point.
+ * - [PRECISION_VERBS]: Only words identified as verbs (ending in う, く, す, つ, ぬ, む, る, matching
+ *   the verb dictionary or compound suffixes, and not blocked by special exclusions) score the final
+ *   character as 1 point.
+ */
+enum class JapaneseVerbRule(val label: String, val description: String) {
+    CABOOSE(
+        label = "Caboose Rule",
+        description = "All words ending in -u row kana (and て/で) score the terminal letter as 1 pt."
+    ),
+    PRECISION_VERBS(
+        label = "Precision Verbs",
+        description = "Only identified verbs (ending in う、く/ぐ、す/ず、つ/づ、ぬ、ぶ、む、る) score the terminal letter as 1 pt."
+    )
+}
+
+/**
  * Visual validation status of a single cell on the crossword board.
  */
 enum class CellValidation {
@@ -231,6 +250,7 @@ object WordsWorthLogic {
     private const val KEY_KEYBOARD_LAYOUT = "keyboard_layout"
     private const val KEY_SCORING_MODE = "scoring_mode"
     private const val KEY_ALLOW_DUPLICATE_WORD_POINTS = "allow_duplicate_word_points"
+    private const val KEY_JAPANESE_VERB_RULE = "japanese_verb_rule"
 
     /** Loads the user's saved [GameLanguage] from SharedPreferences. */
     fun loadGameLanguage(context: Context): GameLanguage {
@@ -307,6 +327,124 @@ object WordsWorthLogic {
             .apply()
     }
 
+    /** Loads the user's saved [JapaneseVerbRule] from SharedPreferences. */
+    fun loadJapaneseVerbRule(context: Context): JapaneseVerbRule {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val saved = prefs.getString(KEY_JAPANESE_VERB_RULE, JapaneseVerbRule.CABOOSE.name)
+        return try {
+            JapaneseVerbRule.valueOf(saved ?: JapaneseVerbRule.CABOOSE.name)
+        } catch (_: Exception) {
+            JapaneseVerbRule.CABOOSE
+        }
+    }
+
+    /** Persists the user's selected [JapaneseVerbRule] to SharedPreferences. */
+    fun saveJapaneseVerbRule(context: Context, rule: JapaneseVerbRule) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_JAPANESE_VERB_RULE, rule.name)
+            .apply()
+    }
+
+    /** Terminal kana eligible as triggers for the Precision Verbs rule. */
+    val VERB_TERMINAL_KANA: Set<Char> = setOf(
+        'う', 'く', 'ぐ', 'す', 'ず', 'つ', 'づ', 'ぬ', 'ぶ', 'む', 'る'
+    )
+
+    /** 2-kana (and special) compound verb endings. */
+    val VERB_SUFFIXES_2: List<String> = listOf(
+        "だす", "こむ", "あう", "たつ", "つく", "きる", "とる",
+        "おく", "よる", "いる", "ます", "ぬく", "やる", "そめる"
+    )
+
+    /** 3-kana compound verb endings. */
+    val VERB_SUFFIXES_3: List<String> = listOf(
+        "あげる", "さげる", "かける", "つける", "すぎる", "なおす",
+        "おとす", "はらう", "ちらす", "まわす", "ならう"
+    )
+
+    /**
+     * Checks if [word] is classified as a Japanese verb under the Precision Verbs rule.
+     *
+     * 1. Word must end with one of the trigger kana:
+     *    (う, く/ぐ, す/ず, つ/づ, ぬ, ぶ, む, る).
+     * 2. For a word ending in 'ぬ':
+     *    - If [word] is "うぬ", "きぬ", "おぬ", or "かんぬ", or ends with "いぬ", then verb = false.
+     *    - Else verb = true.
+     * 3. For words ending in any other trigger kana:
+     *    - [word] is in [verbDictionary]
+     *    - [word] ends with one of: "だす", "こむ", "あう", "たつ", "つく", "きる", "とる",
+     *      "おく", "よる", "いる", "ます", "ぬく", "やる", "そめる"
+     *    - [word] ends with one of: "あげる", "さげる", "かける", "つける", "すぎる", "なおす",
+     *      "おとす", "はらう", "ちらす", "まわす", "ならう"
+     */
+    fun isJapaneseVerb(word: String, verbDictionary: Set<String>): Boolean {
+        if (word.isEmpty()) return false
+        val lastChar = word.last()
+        if (lastChar !in VERB_TERMINAL_KANA) {
+            return false
+        }
+
+        // Special rule for words ending in ぬ:
+        // If (word is うぬ、きぬ、おぬ、or かんぬ) or (ends with いぬ) then verb = false, Else verb = true
+        if (lastChar == 'ぬ') {
+            return !(word == "うぬ" || word == "きぬ" || word == "おぬ" || word == "かんぬ" || word.endsWith("いぬ"))
+        }
+
+        return verbDictionary.contains(word) ||
+            VERB_SUFFIXES_2.any { word.endsWith(it) } ||
+            VERB_SUFFIXES_3.any { word.endsWith(it) }
+    }
+
+    /**
+     * Loads the full Japanese verb dictionary from `all_japanese_verbs_hiragana.txt`.
+     */
+    fun loadJapaneseVerbDictionary(context: Context): Set<String> {
+        val assetFileName = "all_japanese_verbs_hiragana.txt"
+        val words = HashSet<String>(15000)
+        try {
+            val stream = try {
+                context.assets.open(assetFileName)
+            } catch (_: Exception) {
+                File("app/src/main/assets/$assetFileName").takeIf { it.exists() }?.inputStream()
+                    ?: File(assetFileName).takeIf { it.exists() }?.inputStream()
+            }
+            stream?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+                reader.forEachLine { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.isNotEmpty()) {
+                        words.add(trimmed)
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Return empty set on failure
+        }
+        return words
+    }
+
+    /**
+     * Loads the Japanese verb dictionary directly from file (useful for unit tests without Android Context).
+     */
+    fun loadJapaneseVerbDictionaryFromFile(): Set<String> {
+        val assetFileName = "all_japanese_verbs_hiragana.txt"
+        val words = HashSet<String>(15000)
+        val file = File("app/src/main/assets/$assetFileName").takeIf { it.exists() }
+            ?: File("src/main/assets/$assetFileName").takeIf { it.exists() }
+            ?: File(assetFileName).takeIf { it.exists() }
+            ?: File("../$assetFileName").takeIf { it.exists() }
+            ?: File("../app/src/main/assets/$assetFileName").takeIf { it.exists() }
+        file?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+            reader.forEachLine { line ->
+                val trimmed = line.trim()
+                if (trimmed.isNotEmpty()) {
+                    words.add(trimmed)
+                }
+            }
+        }
+        return words
+    }
+
     /** Returns true if [ch] is a Japanese Kana or chōonpu character. */
     fun isJapaneseChar(ch: Char): Boolean = KanaConverter.isKana(ch) || ch == KanaConverter.CHOONPU
 
@@ -324,14 +462,19 @@ object WordsWorthLogic {
     }
 
     /**
-     * Determines whether the letter at ([r], [c]) on [board] is acting strictly as a Caboose letter in Japanese
+     * Determines whether the letter at ([r], [c]) on [board] is acting strictly as a Caboose/reduced-verb letter in Japanese
      * without simultaneously continuing as a non-terminal letter in another word.
      */
-    fun isCabooseCell(board: Array<Array<Char?>>, r: Int, c: Int): Boolean {
+    fun isCabooseCell(
+        board: Array<Array<Char?>>,
+        r: Int,
+        c: Int,
+        japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
+        verbDictionary: Set<String> = emptySet()
+    ): Boolean {
         val size = board.size
         val ch = board.getOrNull(r)?.getOrNull(c) ?: return false
         if (!isLetterCell(ch)) return false
-        if (ch !in KanaConverter.CABOOSE_KANA) return false
 
         // Check horizontal run of letters containing (r, c)
         var startC = c
@@ -347,10 +490,30 @@ object WordsWorthLogic {
         while (endR < size - 1 && isLetterCell(board[endR + 1][c])) endR++
         val vertLen = endR - startR + 1
 
-        val isCabooseHoriz = horizLen >= 2 && c == endC
+        val isCabooseHoriz = if (horizLen >= 2 && c == endC) {
+            when (japaneseVerbRule) {
+                JapaneseVerbRule.CABOOSE -> ch in KanaConverter.CABOOSE_KANA
+                JapaneseVerbRule.PRECISION_VERBS -> {
+                    val word = (startC..endC).map { board[r][it]!! }.joinToString("")
+                    isJapaneseVerb(word, verbDictionary)
+                }
+            }
+        } else {
+            false
+        }
         val isNonTerminalHoriz = horizLen >= 2 && c < endC
 
-        val isCabooseVert = vertLen >= 2 && r == endR
+        val isCabooseVert = if (vertLen >= 2 && r == endR) {
+            when (japaneseVerbRule) {
+                JapaneseVerbRule.CABOOSE -> ch in KanaConverter.CABOOSE_KANA
+                JapaneseVerbRule.PRECISION_VERBS -> {
+                    val word = (startR..endR).map { board[it][c]!! }.joinToString("")
+                    isJapaneseVerb(word, verbDictionary)
+                }
+            }
+        } else {
+            false
+        }
         val isNonTerminalVert = vertLen >= 2 && r < endR
 
         val scoresCaboose = isCabooseHoriz || isCabooseVert
@@ -363,12 +526,19 @@ object WordsWorthLogic {
      * Returns the formatted string representation of the displayed point value for a cell
      * at ([r], [c]) on [board].
      *
-     * In Japanese mode, when a tile in [KanaConverter.CABOOSE_KANA] with base value > 1 terminates
-     * one word (scored as 1 point per the Caboose Rule) AND simultaneously continues into another
+     * In Japanese mode, when a tile with base value > 1 terminates one word (scored as 1 point per
+     * the active Caboose or Precision Verbs Rule) AND simultaneously continues into another
      * intersecting word (scored at its original base value), both values are displayed separated
      * by a middle dot: `"1・$baseVal"`, e.g., `"1・6"`.
      */
-    fun cellDisplayString(board: Array<Array<Char?>>, r: Int, c: Int, language: GameLanguage? = null): String {
+    fun cellDisplayString(
+        board: Array<Array<Char?>>,
+        r: Int,
+        c: Int,
+        language: GameLanguage? = null,
+        japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
+        verbDictionary: Set<String> = emptySet()
+    ): String {
         val ch = board.getOrNull(r)?.getOrNull(c) ?: return ""
         if (!isLetterCell(ch)) return ""
         val isJa = if (language != null) language == GameLanguage.JAPANESE else isJapaneseChar(ch)
@@ -377,9 +547,6 @@ object WordsWorthLogic {
         }
 
         val baseVal = KanaConverter.kanaValue(ch)
-        if (ch !in KanaConverter.CABOOSE_KANA) {
-            return baseVal.toString()
-        }
 
         val size = board.size
 
@@ -397,10 +564,30 @@ object WordsWorthLogic {
         while (endR < size - 1 && isLetterCell(board[endR + 1][c])) endR++
         val vertLen = endR - startR + 1
 
-        val isCabooseHoriz = horizLen >= 2 && c == endC
+        val isCabooseHoriz = if (horizLen >= 2 && c == endC) {
+            when (japaneseVerbRule) {
+                JapaneseVerbRule.CABOOSE -> ch in KanaConverter.CABOOSE_KANA
+                JapaneseVerbRule.PRECISION_VERBS -> {
+                    val word = (startC..endC).map { board[r][it]!! }.joinToString("")
+                    isJapaneseVerb(word, verbDictionary)
+                }
+            }
+        } else {
+            false
+        }
         val isNonTerminalHoriz = horizLen >= 2 && c < endC
 
-        val isCabooseVert = vertLen >= 2 && r == endR
+        val isCabooseVert = if (vertLen >= 2 && r == endR) {
+            when (japaneseVerbRule) {
+                JapaneseVerbRule.CABOOSE -> ch in KanaConverter.CABOOSE_KANA
+                JapaneseVerbRule.PRECISION_VERBS -> {
+                    val word = (startR..endR).map { board[it][c]!! }.joinToString("")
+                    isJapaneseVerb(word, verbDictionary)
+                }
+            }
+        } else {
+            false
+        }
         val isNonTerminalVert = vertLen >= 2 && r < endR
 
         val scoresCaboose = isCabooseHoriz || isCabooseVert
@@ -417,16 +604,23 @@ object WordsWorthLogic {
 
     /**
      * Returns the displayed point value for a cell at ([r], [c]) on [board].
-     * If the cell contains a caboose kana at the end of a word in Japanese,
-     * it evaluates to 1 point per the Caboose Rule; otherwise its intrinsic base tile value.
+     * If the cell contains a terminal kana reduced to 1 point under the active Japanese verb rule,
+     * it evaluates to 1 point; otherwise its intrinsic base tile value.
      */
-    fun cellDisplayValue(board: Array<Array<Char?>>, r: Int, c: Int, language: GameLanguage? = null): Int {
+    fun cellDisplayValue(
+        board: Array<Array<Char?>>,
+        r: Int,
+        c: Int,
+        language: GameLanguage? = null,
+        japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
+        verbDictionary: Set<String> = emptySet()
+    ): Int {
         val ch = board.getOrNull(r)?.getOrNull(c) ?: return 0
         if (!isLetterCell(ch)) return 0
         val isJa = if (language != null) language == GameLanguage.JAPANESE else isJapaneseChar(ch)
         return if (isJa) {
             val baseVal = KanaConverter.kanaValue(ch)
-            if (isCabooseCell(board, r, c)) {
+            if (isCabooseCell(board, r, c, japaneseVerbRule, verbDictionary)) {
                 minOf(baseVal, 1)
             } else {
                 baseVal
@@ -437,10 +631,20 @@ object WordsWorthLogic {
     }
 
     /** Returns the total raw point value of all letters in [word], applying language rules. */
-    fun wordRawScore(word: String, language: GameLanguage? = null): Int {
+    fun wordRawScore(
+        word: String,
+        language: GameLanguage? = null,
+        japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
+        verbDictionary: Set<String> = emptySet()
+    ): Int {
         val isJa = if (language != null) language == GameLanguage.JAPANESE else isJapaneseText(word)
         return if (isJa) {
-            KanaConverter.wordRawScore(word)
+            val isVerb = if (japaneseVerbRule == JapaneseVerbRule.PRECISION_VERBS) {
+                isJapaneseVerb(word, verbDictionary)
+            } else {
+                false
+            }
+            KanaConverter.wordRawScore(word, japaneseVerbRule, isVerb)
         } else {
             word.sumOf { LETTER_VALUES[it.uppercaseChar()] ?: 0 }
         }
@@ -679,7 +883,9 @@ object WordsWorthLogic {
         scoringMode: ScoringMode = ScoringMode.EXTENDED_DIFF_ONLY,
         previouslyValidatedWords: Collection<FormedWord> = emptyList(),
         allowDuplicateWordPoints: Boolean = true,
-        language: GameLanguage? = null
+        language: GameLanguage? = null,
+        japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
+        verbDictionary: Set<String> = emptySet()
     ): TallyResult {
         val size = board.size
         val foundWords = mutableListOf<FormedWord>()
@@ -708,7 +914,7 @@ object WordsWorthLogic {
                                 startRow = r,
                                 startCol = startC,
                                 cells = cells,
-                                rawPoints = wordRawScore(text, language),
+                                rawPoints = wordRawScore(text, language, japaneseVerbRule, verbDictionary),
                                 isValid = dictionary.contains(text)
                             )
                         )
@@ -743,7 +949,7 @@ object WordsWorthLogic {
                                 startRow = startR,
                                 startCol = c,
                                 cells = cells,
-                                rawPoints = wordRawScore(text, language),
+                                rawPoints = wordRawScore(text, language, japaneseVerbRule, verbDictionary),
                                 isValid = dictionary.contains(text)
                             )
                         )
@@ -817,7 +1023,7 @@ object WordsWorthLogic {
                         if (seenKeys.add(key)) {
                             combined.add(
                                 baseWord.copy(
-                                    rawPoints = wordRawScore(baseWord.word, language),
+                                    rawPoints = wordRawScore(baseWord.word, language, japaneseVerbRule, verbDictionary),
                                     isValid = true,
                                     isDuplicateUnscored = false
                                 )

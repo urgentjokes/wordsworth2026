@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.wordsworth.JapaneseVerbRule
 import com.example.wordsworth.KeyboardLayout
 import com.example.wordsworth.ScoringMode
 
@@ -55,6 +56,8 @@ fun SettingsScreen(
     onChangeScoringMode: (ScoringMode) -> Unit,
     allowDuplicateWordPoints: Boolean,
     onChangeAllowDuplicateWordPoints: (Boolean) -> Unit,
+    japaneseVerbRule: JapaneseVerbRule,
+    onChangeJapaneseVerbRule: (JapaneseVerbRule) -> Unit,
     savedGamesCount: Int,
     onClearSavedGames: () -> Unit,
     onClearBoard: () -> Unit = {},
@@ -314,7 +317,76 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 4. Previous Games History Card
+                // 4. Japanese Verb / Caboose Rule Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Japanese Verb / Caboose Rule",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = japaneseVerbRule.description,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            JapaneseVerbRule.entries.forEach { option ->
+                                val isSelected = japaneseVerbRule == option
+                                if (isSelected) {
+                                    Button(
+                                        onClick = { onChangeJapaneseVerbRule(option) },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary
+                                        )
+                                    ) {
+                                        Text(
+                                            text = option.label,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { onChangeJapaneseVerbRule(option) },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+                                    ) {
+                                        Text(
+                                            text = option.label,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 5. Previous Games History Card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),

@@ -67,6 +67,8 @@ fun WordsWorthApp() {
             onChangeKeyboardLayout = gameState::changeKeyboardLayout,
             scoringMode = gameState.scoringMode,
             onChangeScoringMode = gameState::changeScoringMode,
+            japaneseVerbRule = gameState.japaneseVerbRule,
+            onChangeJapaneseVerbRule = gameState::changeJapaneseVerbRule,
             allowDuplicateWordPoints = gameState.allowDuplicateWordPoints,
             onChangeAllowDuplicateWordPoints = gameState::changeAllowDuplicateWordPoints,
             savedGamesCount = gameState.savedGames.size,
@@ -118,6 +120,8 @@ fun WordsWorthApp() {
                 gameState.pendingDeleteEntry = entry
             },
             gameLanguage = gameState.gameLanguage,
+            japaneseVerbRule = gameState.japaneseVerbRule,
+            verbDictionary = gameState.japaneseVerbDictionary,
             onToggleLanguage = gameState::toggleGameLanguage,
             pendingRomaji = gameState.pendingRomaji,
             onKeyAction = gameState::onKeyAction

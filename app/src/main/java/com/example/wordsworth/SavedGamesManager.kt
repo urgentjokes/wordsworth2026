@@ -155,7 +155,9 @@ object SavedGamesManager {
     fun createBoardScreenshot(
         board: Array<Array<Char?>>,
         cellValidations: Map<Pair<Int, Int>, CellValidation>,
-        language: GameLanguage? = null
+        language: GameLanguage? = null,
+        japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
+        verbDictionary: Set<String> = emptySet()
     ): Bitmap {
         val boardSize = board.size
         val sizePx = 420
@@ -243,7 +245,7 @@ object SavedGamesManager {
                     canvas.drawText(letterChar.toString(), centerX, centerY, letterPaint)
 
                     valuePaint.color = textColor
-                    val pts = WordsWorthLogic.cellDisplayString(board, r, c, language)
+                    val pts = WordsWorthLogic.cellDisplayString(board, r, c, language, japaneseVerbRule, verbDictionary)
                     if (pts.length > 2) {
                         valuePaint.textSize = (cellSize * 0.22f).coerceIn(7f, 18f)
                     } else {
@@ -281,11 +283,13 @@ object SavedGamesManager {
         tallyResult: TallyResult,
         elapsedSeconds: Int,
         replaceId: Long? = null,
-        language: GameLanguage? = null
+        language: GameLanguage? = null,
+        japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
+        verbDictionary: Set<String> = emptySet()
     ): SavedGameEntry {
         val dir = getStorageDir(context)
         val id = System.currentTimeMillis()
-        val bitmap = createBoardScreenshot(board, tallyResult.cellValidations, language)
+        val bitmap = createBoardScreenshot(board, tallyResult.cellValidations, language, japaneseVerbRule, verbDictionary)
         val imageFile = File(dir, "board_$id.png")
         FileOutputStream(imageFile).use { out ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)

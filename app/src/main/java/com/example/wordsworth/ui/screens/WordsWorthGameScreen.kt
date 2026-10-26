@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
 import com.example.wordsworth.FormedWord
 import com.example.wordsworth.GameLanguage
+import com.example.wordsworth.JapaneseVerbRule
 import com.example.wordsworth.KeyboardLayout
 import com.example.wordsworth.SavedGameEntry
 import com.example.wordsworth.SavedGamesManager
@@ -114,21 +115,27 @@ fun WordsWorthGameScreen(
     onClickSavedGame: (SavedGameEntry) -> Unit,
     onDeleteSavedGame: (SavedGameEntry) -> Unit,
     gameLanguage: GameLanguage = GameLanguage.ENGLISH,
+    japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
+    verbDictionary: Set<String> = emptySet(),
     onToggleLanguage: () -> Unit = {},
     pendingRomaji: String = "",
     onKeyAction: (String) -> Unit = {}
 ) {
     // Cached thumbnails for the "All-blank" and "Random pattern" option buttons
-    val allBlankThumb = remember {
+    val allBlankThumb = remember(japaneseVerbRule, verbDictionary) {
         SavedGamesManager.createBoardScreenshot(
             WordsWorthLogic.createBlankBoard(6),
-            emptyMap()
+            emptyMap(),
+            japaneseVerbRule = japaneseVerbRule,
+            verbDictionary = verbDictionary
         ).asImageBitmap()
     }
-    val randomPatternThumb = remember {
+    val randomPatternThumb = remember(japaneseVerbRule, verbDictionary) {
         SavedGamesManager.createBoardScreenshot(
             WordsWorthLogic.samplePatternThumbnailBoard(),
-            emptyMap()
+            emptyMap(),
+            japaneseVerbRule = japaneseVerbRule,
+            verbDictionary = verbDictionary
         ).asImageBitmap()
     }
 
@@ -336,7 +343,9 @@ fun WordsWorthGameScreen(
                                                 onClearCell = { r, c -> onUpdateCell(r, c, null) },
                                                 isCompact = true,
                                                 pendingRomaji = pendingRomaji,
-                                                gameLanguage = gameLanguage
+                                                gameLanguage = gameLanguage,
+                                                japaneseVerbRule = japaneseVerbRule,
+                                                verbDictionary = verbDictionary
                                             )
                                         }
 
@@ -436,7 +445,9 @@ fun WordsWorthGameScreen(
                                                 onClearCell = { r, c -> onUpdateCell(r, c, null) },
                                                 isCompact = true,
                                                 pendingRomaji = pendingRomaji,
-                                                gameLanguage = gameLanguage
+                                                gameLanguage = gameLanguage,
+                                                japaneseVerbRule = japaneseVerbRule,
+                                                verbDictionary = verbDictionary
                                             )
                                         }
 
@@ -567,7 +578,9 @@ fun WordsWorthGameScreen(
                                                 onBoardCellTap = onBoardCellTap,
                                                 onClearCell = { r, c -> onUpdateCell(r, c, null) },
                                                 pendingRomaji = pendingRomaji,
-                                                gameLanguage = gameLanguage
+                                                gameLanguage = gameLanguage,
+                                                japaneseVerbRule = japaneseVerbRule,
+                                                verbDictionary = verbDictionary
                                             )
 
                                             Spacer(modifier = Modifier.height(6.dp))

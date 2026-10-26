@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.wordsworth.CellValidation
 import com.example.wordsworth.GameLanguage
+import com.example.wordsworth.JapaneseVerbRule
 import com.example.wordsworth.KeyboardLayout
 import com.example.wordsworth.TallyResult
 import com.example.wordsworth.WordDirection
@@ -74,7 +75,9 @@ fun CrosswordBoardGrid(
     modifier: Modifier = Modifier,
     isCompact: Boolean = false,
     pendingRomaji: String = "",
-    gameLanguage: GameLanguage = GameLanguage.ENGLISH
+    gameLanguage: GameLanguage = GameLanguage.ENGLISH,
+    japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
+    verbDictionary: Set<String> = emptySet()
 ) {
     val currentBoard by rememberUpdatedState(board)
     val currentBoardSize by rememberUpdatedState(boardSize)
@@ -139,7 +142,14 @@ fun CrosswordBoardGrid(
                         val validation = tallyResult?.cellValidations?.get(r to c)
                             ?: CellValidation.UNCHECKED
 
-                        val displayValue = WordsWorthLogic.cellDisplayString(board, r, c, gameLanguage)
+                        val displayValue = WordsWorthLogic.cellDisplayString(
+                            board = board,
+                            r = r,
+                            c = c,
+                            language = gameLanguage,
+                            japaneseVerbRule = japaneseVerbRule,
+                            verbDictionary = verbDictionary
+                        )
 
                         BoardCell(
                             letter = cellChar,
