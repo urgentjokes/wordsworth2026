@@ -251,6 +251,7 @@ object WordsWorthLogic {
     private const val KEY_SCORING_MODE = "scoring_mode"
     private const val KEY_ALLOW_DUPLICATE_WORD_POINTS = "allow_duplicate_word_points"
     private const val KEY_JAPANESE_VERB_RULE = "japanese_verb_rule"
+    private const val KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
 
     /** Loads the user's saved [GameLanguage] from SharedPreferences. */
     fun loadGameLanguage(context: Context): GameLanguage {
@@ -343,6 +344,20 @@ object WordsWorthLogic {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_JAPANESE_VERB_RULE, rule.name)
+            .apply()
+    }
+
+    /** Loads whether keyboard haptic feedback vibration is enabled from SharedPreferences. */
+    fun loadHapticFeedbackEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_HAPTIC_FEEDBACK_ENABLED, true)
+    }
+
+    /** Persists whether keyboard haptic feedback vibration is enabled to SharedPreferences. */
+    fun saveHapticFeedbackEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_HAPTIC_FEEDBACK_ENABLED, enabled)
             .apply()
     }
 

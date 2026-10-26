@@ -123,6 +123,9 @@ class WordsWorthGameState(
     /** Active Japanese verb scoring rule ([JapaneseVerbRule.CABOOSE] or [JapaneseVerbRule.PRECISION_VERBS]). */
     var japaneseVerbRule by mutableStateOf(WordsWorthLogic.loadJapaneseVerbRule(context))
 
+    /** Controls whether keyboard taps and drags produce subtle haptic feedback vibration. */
+    var isHapticFeedbackEnabled by mutableStateOf(WordsWorthLogic.loadHapticFeedbackEnabled(context))
+
     /** Loaded Japanese verb dictionary from all_japanese_verbs_hiragana.txt. */
     var japaneseVerbDictionary by mutableStateOf<Set<String>>(emptySet())
 
@@ -991,6 +994,12 @@ class WordsWorthGameState(
         if (tallyResult != null && isDictionaryLoaded) {
             tallyResult = evaluateBoard(verbRule = newRule)
         }
+    }
+
+    /** Updates the keyboard haptic feedback preference and saves it to SharedPreferences. */
+    fun changeHapticFeedbackEnabled(enabled: Boolean) {
+        isHapticFeedbackEnabled = enabled
+        WordsWorthLogic.saveHapticFeedbackEnabled(context, enabled)
     }
 
     /** Clears all saved games from disk and from the in-memory [savedGames] list. */

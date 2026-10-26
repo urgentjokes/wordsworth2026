@@ -25,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -58,6 +59,8 @@ fun SettingsScreen(
     onChangeAllowDuplicateWordPoints: (Boolean) -> Unit,
     japaneseVerbRule: JapaneseVerbRule,
     onChangeJapaneseVerbRule: (JapaneseVerbRule) -> Unit,
+    isHapticFeedbackEnabled: Boolean = true,
+    onChangeHapticFeedbackEnabled: (Boolean) -> Unit = {},
     savedGamesCount: Int,
     onClearSavedGames: () -> Unit,
     onClearBoard: () -> Unit = {},
@@ -167,6 +170,53 @@ fun SettingsScreen(
                                 }
                             }
                         }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Keyboard Haptic Feedback Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 16.dp)
+                        ) {
+                            Text(
+                                text = "Keyboard Haptic Feedback",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = if (isHapticFeedbackEnabled) {
+                                    "Vibrate slightly on keyboard tile taps and drags."
+                                } else {
+                                    "Keyboard vibration is turned off."
+                                },
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = isHapticFeedbackEnabled,
+                            onCheckedChange = onChangeHapticFeedbackEnabled
+                        )
                     }
                 }
 

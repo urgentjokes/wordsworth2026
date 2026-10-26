@@ -1,5 +1,6 @@
 package com.example.wordsworth.ui.components
 
+import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -36,6 +37,7 @@ import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -353,11 +355,14 @@ fun TileKeyboardRack(
     modifier: Modifier = Modifier,
     isCompact: Boolean = false,
     gameLanguage: GameLanguage = GameLanguage.ENGLISH,
+    isHapticFeedbackEnabled: Boolean = true,
     onKeyAction: ((String) -> Unit)? = null
 ) {
+    val view = LocalView.current
     val keyboardRowsList = WordsWorthLogic.keyboardRows(keyboardLayout, gameLanguage)
     val currentKeyboardRows by rememberUpdatedState(keyboardRowsList)
     val currentIsBoardLocked by rememberUpdatedState(isBoardLocked)
+    val currentIsHapticFeedbackEnabled by rememberUpdatedState(isHapticFeedbackEnabled)
     val currentOnKeyboardInput by rememberUpdatedState(onKeyboardInput)
     val currentOnKeyAction by rememberUpdatedState(onKeyAction)
     val currentOnDragStart by rememberUpdatedState(onDragStart)
@@ -417,6 +422,12 @@ fun TileKeyboardRack(
                                     ) {
                                         isDragging = true
                                         change.consume()
+                                        if (currentIsHapticFeedbackEnabled) {
+                                            view.performHapticFeedback(
+                                                HapticFeedbackConstants.KEYBOARD_TAP,
+                                                HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
+                                            )
+                                        }
                                         currentOnDragStart(touchedChar, lastPos)
                                     } else if (diff.getDistance() > touchSlop) {
                                         isScrolling = true
@@ -431,6 +442,12 @@ fun TileKeyboardRack(
                         if (isDragging && touchedChar != null) {
                             currentOnDragEnd(touchedChar, lastPos, null)
                         } else if (!isScrolling) {
+                            if (currentIsHapticFeedbackEnabled) {
+                                view.performHapticFeedback(
+                                    HapticFeedbackConstants.KEYBOARD_TAP,
+                                    HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
+                                )
+                            }
                             if (currentOnKeyAction != null) {
                                 currentOnKeyAction?.invoke(touchedKey)
                             } else {

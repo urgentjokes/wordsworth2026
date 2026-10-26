@@ -117,6 +117,7 @@ fun WordsWorthGameScreen(
     gameLanguage: GameLanguage = GameLanguage.ENGLISH,
     japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
     verbDictionary: Set<String> = emptySet(),
+    isHapticFeedbackEnabled: Boolean = true,
     onToggleLanguage: () -> Unit = {},
     pendingRomaji: String = "",
     onKeyAction: (String) -> Unit = {}
@@ -376,6 +377,7 @@ fun WordsWorthGameScreen(
                                             onKeyboardInput = onKeyboardInput,
                                             isCompact = true,
                                             gameLanguage = gameLanguage,
+                                            isHapticFeedbackEnabled = isHapticFeedbackEnabled,
                                             onKeyAction = onKeyAction,
                                             onDragStart = { letter, localPos ->
                                                 draggingLetter = letter
@@ -493,6 +495,7 @@ fun WordsWorthGameScreen(
                                                 onKeyboardInput = onKeyboardInput,
                                                 isCompact = true,
                                                 gameLanguage = gameLanguage,
+                                                isHapticFeedbackEnabled = isHapticFeedbackEnabled,
                                                 onKeyAction = onKeyAction,
                                                 onDragStart = { letter, localPos ->
                                                     draggingLetter = letter
@@ -611,6 +614,7 @@ fun WordsWorthGameScreen(
                                                 onKeyboardOriginChanged = { keyboardOriginInRoot = it },
                                                 onKeyboardInput = onKeyboardInput,
                                                 gameLanguage = gameLanguage,
+                                                isHapticFeedbackEnabled = isHapticFeedbackEnabled,
                                                 onKeyAction = onKeyAction,
                                                 onDragStart = { letter, localPos ->
                                                     draggingLetter = letter
