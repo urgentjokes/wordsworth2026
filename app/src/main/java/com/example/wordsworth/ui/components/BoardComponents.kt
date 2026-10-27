@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,10 +37,16 @@ import androidx.compose.ui.input.pointer.PointerEventTimeoutCancellationExceptio
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -284,17 +289,6 @@ fun BoardCell(
             .border(borderWidth, borderColor, RoundedCornerShape(cornerRadius))
             .padding(innerPadding)
     ) {
-        if (isSprinkled && letter != null) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = 2.dp, top = 2.dp)
-                    .size(if (isCompact) 4.dp else 5.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.55f))
-            )
-        }
-
         // Show pending Romaji (if typing) or centered direction arrow inside an empty focused square
         if (isFocused && pendingRomaji.isNotEmpty()) {
             Text(
@@ -319,13 +313,41 @@ fun BoardCell(
                 CellValidation.INVALID -> WordsWorthColors.InvalidWordText
                 CellValidation.UNCHECKED -> WordsWorthColors.TilePrimaryText
             }
-            Text(
-                text = letter.toString(),
-                fontSize = letterFontSize,
-                fontWeight = FontWeight.ExtraBold,
-                color = textColor,
+            Box(
                 modifier = Modifier.align(Alignment.Center)
-            )
+            ) {
+                Text(
+                    text = letter.toString(),
+                    fontSize = letterFontSize,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = textColor
+                )
+                if (isSprinkled) {
+                    Text(
+                        text = buildAnnotatedString {
+                            withStyle(
+                                SpanStyle(
+                                    baselineShift = BaselineShift.Superscript,
+                                    fontSize = (letterFontSize.value * 0.70f).sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            ) {
+                                append("\u2009*")
+                            }
+                        },
+                        fontSize = letterFontSize,
+                        color = textColor,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .layout { measurable, constraints ->
+                                val placeable = measurable.measure(constraints)
+                                layout(0, 0) {
+                                    placeable.placeRelative(0, 0)
+                                }
+                            }
+                    )
+                }
+            }
             val pts = displayValue ?: WordsWorthLogic.letterValue(letter).toString()
             val isDual = pts.contains('・')
             val adjustedFontSize = if (isDual || pts.length > 2) valueFontSize * 0.85f else valueFontSize
