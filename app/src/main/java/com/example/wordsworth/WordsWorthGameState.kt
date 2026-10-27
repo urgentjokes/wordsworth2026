@@ -48,6 +48,7 @@ class WordsWorthGameState(
         private set
 
     init {
+        WordsWorthLogic.updateLauncherIcon(context, gameLanguage)
         loadInitialData()
     }
 

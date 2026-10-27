@@ -1,6 +1,8 @@
 package com.example.wordsworth
 
+import android.content.ComponentName
 import android.content.Context
+import android.content.pm.PackageManager
 import java.io.File
 
 /**
@@ -288,12 +290,45 @@ object WordsWorthLogic {
         }
     }
 
-    /** Persists the user's selected [GameLanguage] to SharedPreferences. */
+    /** Persists the user's selected [GameLanguage] to SharedPreferences and updates the launcher icon. */
     fun saveGameLanguage(context: Context, lang: GameLanguage) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_GAME_LANGUAGE, lang.name)
             .apply()
+        updateLauncherIcon(context, lang)
+    }
+
+    /**
+     * Updates the active launcher icon alias (Approach B) to match the selected [GameLanguage].
+     * Enables [MainActivityAliasEn] for English or [MainActivityAliasJa] for Japanese.
+     */
+    fun updateLauncherIcon(context: Context, lang: GameLanguage) {
+        try {
+            val pm = context.packageManager
+            val enAlias = ComponentName(context, "com.example.wordsworth.MainActivityAliasEn")
+            val jaAlias = ComponentName(context, "com.example.wordsworth.MainActivityAliasJa")
+
+            val enState = if (lang == GameLanguage.ENGLISH) {
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            } else {
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            }
+            val jaState = if (lang == GameLanguage.JAPANESE) {
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            } else {
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            }
+
+            if (pm.getComponentEnabledSetting(enAlias) != enState) {
+                pm.setComponentEnabledSetting(enAlias, enState, PackageManager.DONT_KILL_APP)
+            }
+            if (pm.getComponentEnabledSetting(jaAlias) != jaState) {
+                pm.setComponentEnabledSetting(jaAlias, jaState, PackageManager.DONT_KILL_APP)
+            }
+        } catch (_: Exception) {
+            // Defensive guard for non-standard environments/unit tests
+        }
     }
 
     /** Loads the user's saved [KeyboardLayout] from SharedPreferences. */

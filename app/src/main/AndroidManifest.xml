@@ -14,12 +14,35 @@
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:exported="true"
-            android:theme="@style/Theme.WordsWorth">
+            android:theme="@style/Theme.WordsWorth" />
+
+        <activity-alias
+            android:name=".MainActivityAliasEn"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_en"
+            android:roundIcon="@mipmap/ic_launcher_en_round"
+            android:label="@string/app_name"
+            android:enabled="true"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAliasJa"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_ja"
+            android:roundIcon="@mipmap/ic_launcher_ja_round"
+            android:label="@string/app_name_ja"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
     </application>
 
 </manifest>
