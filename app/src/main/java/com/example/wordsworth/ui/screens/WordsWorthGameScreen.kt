@@ -124,6 +124,7 @@ fun WordsWorthGameScreen(
     japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
     verbDictionary: Set<String> = emptySet(),
     isHapticFeedbackEnabled: Boolean = true,
+    sprinkledCells: Set<Pair<Int, Int>> = emptySet(),
     onToggleLanguage: () -> Unit = {},
     pendingRomaji: String = "",
     onKeyAction: (String) -> Unit = {}
@@ -354,7 +355,8 @@ fun WordsWorthGameScreen(
                                                 pendingRomaji = pendingRomaji,
                                                 gameLanguage = gameLanguage,
                                                 japaneseVerbRule = japaneseVerbRule,
-                                                verbDictionary = verbDictionary
+                                                verbDictionary = verbDictionary,
+                                                sprinkledCells = sprinkledCells
                                             )
                                         }
 
@@ -465,7 +467,8 @@ fun WordsWorthGameScreen(
                                                 pendingRomaji = pendingRomaji,
                                                 gameLanguage = gameLanguage,
                                                 japaneseVerbRule = japaneseVerbRule,
-                                                verbDictionary = verbDictionary
+                                                verbDictionary = verbDictionary,
+                                                sprinkledCells = sprinkledCells
                                             )
                                         }
 
@@ -608,7 +611,8 @@ fun WordsWorthGameScreen(
                                                 pendingRomaji = pendingRomaji,
                                                 gameLanguage = gameLanguage,
                                                 japaneseVerbRule = japaneseVerbRule,
-                                                verbDictionary = verbDictionary
+                                                verbDictionary = verbDictionary,
+                                                sprinkledCells = sprinkledCells
                                             )
 
                                             Spacer(modifier = Modifier.height(3.dp))

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -32,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventTimeoutCancellationException
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
@@ -79,12 +81,14 @@ fun CrosswordBoardGrid(
     pendingRomaji: String = "",
     gameLanguage: GameLanguage = GameLanguage.ENGLISH,
     japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
-    verbDictionary: Set<String> = emptySet()
+    verbDictionary: Set<String> = emptySet(),
+    sprinkledCells: Set<Pair<Int, Int>> = emptySet()
 ) {
     val currentBoard by rememberUpdatedState(board)
     val currentBoardSize by rememberUpdatedState(boardSize)
     val currentOnBoardCellTap by rememberUpdatedState(onBoardCellTap)
     val currentOnClearCell by rememberUpdatedState(onClearCell)
+    val currentSprinkledCells by rememberUpdatedState(sprinkledCells)
 
     Box(
         modifier = modifier
@@ -119,7 +123,7 @@ fun CrosswordBoardGrid(
                         val row = ((offset.y / h) * size).toInt().coerceIn(0, size - 1)
 
                         val cellChar = currentBoard.getOrNull(row)?.getOrNull(col)
-                        if (WordsWorthLogic.isLetterCell(cellChar)) {
+                        if (WordsWorthLogic.isLetterCell(cellChar) && (row to col) !in currentSprinkledCells) {
                             currentOnClearCell(row, col)
                         }
                     }
@@ -141,6 +145,7 @@ fun CrosswordBoardGrid(
                         val cellChar = board.getOrNull(r)?.getOrNull(c)
                         val isHovered = hoveredCell == (r to c)
                         val isFocused = focusedCell == (r to c)
+                        val isSprinkled = (r to c) in currentSprinkledCells
                         val validation = tallyResult?.cellValidations?.get(r to c)
                             ?: CellValidation.UNCHECKED
 
@@ -161,6 +166,7 @@ fun CrosswordBoardGrid(
                             isHovered = isHovered,
                             validation = validation,
                             isCompact = isCompact,
+                            isSprinkled = isSprinkled,
                             pendingRomaji = if (isFocused) pendingRomaji else "",
                             displayValue = displayValue,
                             modifier = Modifier
@@ -192,6 +198,7 @@ fun BoardCell(
     validation: CellValidation,
     modifier: Modifier = Modifier,
     isCompact: Boolean = false,
+    isSprinkled: Boolean = false,
     pendingRomaji: String = "",
     displayValue: String? = null
 ) {
@@ -205,6 +212,7 @@ fun BoardCell(
         letter == null -> WordsWorthColors.EmptyCellBackground
         validation == CellValidation.VALID -> WordsWorthColors.ValidCellBackground
         validation == CellValidation.INVALID -> WordsWorthColors.InvalidCellBackground
+        isSprinkled -> Color(0xFFF3EAD8)
         else -> WordsWorthColors.UncheckedLetterCellBackground
     }
 
@@ -276,6 +284,17 @@ fun BoardCell(
             .border(borderWidth, borderColor, RoundedCornerShape(cornerRadius))
             .padding(innerPadding)
     ) {
+        if (isSprinkled && letter != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 2.dp, top = 2.dp)
+                    .size(if (isCompact) 4.dp else 5.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.55f))
+            )
+        }
+
         // Show pending Romaji (if typing) or centered direction arrow inside an empty focused square
         if (isFocused && pendingRomaji.isNotEmpty()) {
             Text(

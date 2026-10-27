@@ -89,6 +89,29 @@ enum class CellValidation {
 }
 
 /**
+ * Controls the density of random letters pre-filled (sprinkled) into random squares on new boards.
+ *
+ * - [NONE]: 0% (zero letters pre-filled).
+ * - [FEW]: 5% of available squares pre-filled with random letters.
+ * - [SOME]: 10% of available squares pre-filled with random letters.
+ * - [MANY]: 15% of available squares pre-filled with random letters.
+ */
+enum class LetterSprinkleMode(val label: String, val percentage: Float) {
+    NONE(label = "None", percentage = 0.0f),
+    FEW(label = "Few", percentage = 0.05f),
+    SOME(label = "Some", percentage = 0.10f),
+    MANY(label = "Many", percentage = 0.15f);
+
+    val description: String
+        get() = when (this) {
+            NONE -> "Zero letters (blank board)."
+            FEW -> "5 percent of available squares."
+            SOME -> "10 pct of available squares."
+            MANY -> "15 pct of available squares."
+        }
+}
+
+/**
  * Represents a contiguous horizontal or vertical run of 2 or more letters on the board.
  *
  * @property word Uppercase string formed by the contiguous letters.
@@ -252,6 +275,7 @@ object WordsWorthLogic {
     private const val KEY_ALLOW_DUPLICATE_WORD_POINTS = "allow_duplicate_word_points"
     private const val KEY_JAPANESE_VERB_RULE = "japanese_verb_rule"
     private const val KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
+    private const val KEY_LETTER_SPRINKLE_MODE = "letter_sprinkle_mode"
 
     /** Loads the user's saved [GameLanguage] from SharedPreferences. */
     fun loadGameLanguage(context: Context): GameLanguage {
@@ -358,6 +382,25 @@ object WordsWorthLogic {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_HAPTIC_FEEDBACK_ENABLED, enabled)
+            .apply()
+    }
+
+    /** Loads the user's saved [LetterSprinkleMode] from SharedPreferences. */
+    fun loadLetterSprinkleMode(context: Context): LetterSprinkleMode {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val name = prefs.getString(KEY_LETTER_SPRINKLE_MODE, LetterSprinkleMode.NONE.name)
+        return try {
+            LetterSprinkleMode.valueOf(name ?: LetterSprinkleMode.NONE.name)
+        } catch (_: Exception) {
+            LetterSprinkleMode.NONE
+        }
+    }
+
+    /** Persists the user's selected [LetterSprinkleMode] to SharedPreferences. */
+    fun saveLetterSprinkleMode(context: Context, mode: LetterSprinkleMode) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LETTER_SPRINKLE_MODE, mode.name)
             .apply()
     }
 
@@ -665,6 +708,64 @@ object WordsWorthLogic {
         }
     }
 
+    /**
+     * Calculates the raw score of [word] across [cells], doubling the point value of any
+     * cell in [sprinkledCells] that is not already in [claimedSprinkles].
+     *
+     * In Japanese mode, terminal letters reduced to 1 point under the active verb rule
+     * double from 1 point to 2 points, respecting "(subject to the verb-related rules)".
+     *
+     * @return Pair of (awarded raw points, set of newly claimed sprinkle coordinates).
+     */
+    fun calculateWordRawScore(
+        word: String,
+        cells: List<Pair<Int, Int>>,
+        sprinkledCells: Set<Pair<Int, Int>> = emptySet(),
+        claimedSprinkles: Set<Pair<Int, Int>> = emptySet(),
+        language: GameLanguage? = null,
+        japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
+        verbDictionary: Set<String> = emptySet()
+    ): Pair<Int, Set<Pair<Int, Int>>> {
+        if (word.isEmpty()) return 0 to emptySet()
+        val isJa = if (language != null) language == GameLanguage.JAPANESE else isJapaneseText(word)
+        val isVerb = if (isJa && japaneseVerbRule == JapaneseVerbRule.PRECISION_VERBS) {
+            isJapaneseVerb(word, verbDictionary)
+        } else {
+            false
+        }
+
+        var total = 0
+        val newlyClaimed = mutableSetOf<Pair<Int, Int>>()
+        val lastIndex = word.length - 1
+
+        for (i in word.indices) {
+            val ch = word[i]
+            val cellPos = cells.getOrNull(i)
+            val isEligibleSprinkle = cellPos != null && cellPos in sprinkledCells && cellPos !in claimedSprinkles
+
+            val effectiveVal: Int
+            if (isJa) {
+                val baseVal = KanaConverter.kanaValue(ch)
+                val isTerminalReduced = when (japaneseVerbRule) {
+                    JapaneseVerbRule.CABOOSE -> (i == lastIndex && ch in KanaConverter.CABOOSE_KANA)
+                    JapaneseVerbRule.PRECISION_VERBS -> (i == lastIndex && isVerb)
+                }
+                effectiveVal = if (isTerminalReduced) minOf(baseVal, 1) else baseVal
+            } else {
+                effectiveVal = LETTER_VALUES[ch.uppercaseChar()] ?: 0
+            }
+
+            if (isEligibleSprinkle) {
+                total += effectiveVal * 2
+                newlyClaimed.add(cellPos!!)
+            } else {
+                total += effectiveVal
+            }
+        }
+
+        return total to newlyClaimed
+    }
+
     private fun getWhitelistFileName(language: GameLanguage): String =
         if (language == GameLanguage.JAPANESE) "whitelisted_words_ja.txt" else "whitelisted_words.txt"
 
@@ -800,6 +901,138 @@ object WordsWorthLogic {
         return board
     }
 
+    /** The 45 standard gojūon Hiragana characters used for Japanese letter sprinkling (excluding を). */
+    val SPRINKLE_KANA: List<Char> = listOf(
+        'あ', 'い', 'う', 'え', 'お',
+        'か', 'き', 'く', 'け', 'こ',
+        'さ', 'し', 'す', 'せ', 'そ',
+        'た', 'ち', 'つ', 'て', 'と',
+        'な', 'に', 'ぬ', 'ね', 'の',
+        'は', 'ひ', 'ふ', 'へ', 'ほ',
+        'ま', 'み', 'む', 'め', 'も',
+        'や', 'ゆ', 'よ',
+        'ら', 'り', 'る', 'れ', 'ろ',
+        'わ', 'ん'
+    )
+
+    /** Standard English uppercase letters ('A'..'Z') used for English letter sprinkling. */
+    val SPRINKLE_LETTERS_EN: List<Char> = ALPHABET
+
+    /**
+     * Greedily selects up to [count] squares from [availableCells] such that no two selected
+     * squares are orthogonally adjacent to each other.
+     */
+    fun selectNonAdjacentSprinkleCells(
+        availableCells: List<Pair<Int, Int>>,
+        count: Int,
+        random: java.util.Random
+    ): List<Pair<Int, Int>> {
+        if (count <= 0 || availableCells.isEmpty()) return emptyList()
+
+        var bestSelection: List<Pair<Int, Int>> = emptyList()
+        val maxAttempts = 100
+
+        for (attempt in 0 until maxAttempts) {
+            val shuffled = availableCells.shuffled(random)
+            val current = mutableListOf<Pair<Int, Int>>()
+
+            for (cell in shuffled) {
+                val (r, c) = cell
+                val isAdjacent = current.any { (sr, sc) ->
+                    kotlin.math.abs(sr - r) + kotlin.math.abs(sc - c) == 1
+                }
+                if (!isAdjacent) {
+                    current.add(cell)
+                    if (current.size == count) {
+                        return current
+                    }
+                }
+            }
+
+            if (current.size > bestSelection.size) {
+                bestSelection = current
+            }
+        }
+
+        return bestSelection
+    }
+
+    /**
+     * Calculates the exact number of squares to pre-fill given the [availableSquareCount] and [mode].
+     *
+     * - [LetterSprinkleMode.NONE]: 0 (zero letters).
+     * - [LetterSprinkleMode.FEW]: 5% of available squares (rounded to nearest integer, minimum 1 if available > 0).
+     * - [LetterSprinkleMode.SOME]: 10% of available squares (rounded to nearest integer, minimum 1 if available > 0).
+     * - [LetterSprinkleMode.MANY]: 15% of available squares (rounded to nearest integer, minimum 1 if available > 0).
+     */
+    fun sprinkleLetterCount(availableSquareCount: Int, mode: LetterSprinkleMode): Int {
+        if (mode == LetterSprinkleMode.NONE || availableSquareCount <= 0) return 0
+        val count = kotlin.math.round(availableSquareCount * mode.percentage).toInt()
+        return count.coerceIn(1, availableSquareCount)
+    }
+
+    /**
+     * Sprinkles random letters into random squares on [board] according to [mode] and [language].
+     *
+     * Adheres to the following refinement rules:
+     * 1. を is never used as a sprinkle kana.
+     * 3. ん can't be placed on the top row (r == 0) or left-most column (c == 0).
+     * 4. Two sprinkled letters can't be orthogonally adjacent to each other.
+     * 5. Q can't be placed on the bottom row (r == board.size - 1) or right-most column (c == board.size - 1).
+     *
+     * @param board Matrix of board squares. Blocked squares (`'#'`) are strictly preserved.
+     * @param mode Selected sprinkle density ([LetterSprinkleMode]).
+     * @param language Active game language ([GameLanguage]).
+     * @param random Optional [java.util.Random] instance for deterministic testing.
+     * @return Set of `(row, col)` coordinates of squares that were populated with sprinkled letters.
+     */
+    fun sprinkleLetters(
+        board: Array<Array<Char?>>,
+        mode: LetterSprinkleMode,
+        language: GameLanguage,
+        random: java.util.Random = java.util.Random()
+    ): Set<Pair<Int, Int>> {
+        if (mode == LetterSprinkleMode.NONE) return emptySet()
+
+        val availableCells = mutableListOf<Pair<Int, Int>>()
+        for (r in board.indices) {
+            for (c in board[r].indices) {
+                if (!isBlockedCell(board[r][c]) && board[r][c] == null) {
+                    availableCells.add(r to c)
+                }
+            }
+        }
+
+        val count = sprinkleLetterCount(availableCells.size, mode)
+        if (count <= 0) return emptySet()
+
+        // Rule 4: Two sprinkles can't be adjacent to each other
+        val selectedCells = selectNonAdjacentSprinkleCells(availableCells, count, random)
+
+        val boardSize = board.size
+        for ((r, c) in selectedCells) {
+            val pool = if (language == GameLanguage.JAPANESE) {
+                // Rule 1: 'を' already excluded from SPRINKLE_KANA
+                // Rule 3: 'ん' can't be on the top row (r == 0) or left-most column (c == 0)
+                if (r == 0 || c == 0) {
+                    SPRINKLE_KANA.filter { it != 'ん' }
+                } else {
+                    SPRINKLE_KANA
+                }
+            } else {
+                // Rule 5: 'Q' can't be on the bottom row (r == boardSize - 1) or right-most column (c == boardSize - 1)
+                if (r == boardSize - 1 || c == boardSize - 1) {
+                    SPRINKLE_LETTERS_EN.filter { it != 'Q' }
+                } else {
+                    SPRINKLE_LETTERS_EN
+                }
+            }
+            board[r][c] = pool[random.nextInt(pool.size)]
+        }
+
+        return selectedCells.toSet()
+    }
+
     /**
      * Verifies that all white (non-blocked) squares on [board] are orthogonally contiguous
      * and that every white square has at least 2 orthogonal white neighbors.
@@ -900,10 +1133,21 @@ object WordsWorthLogic {
         allowDuplicateWordPoints: Boolean = true,
         language: GameLanguage? = null,
         japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
-        verbDictionary: Set<String> = emptySet()
+        verbDictionary: Set<String> = emptySet(),
+        sprinkledCells: Set<Pair<Int, Int>> = emptySet()
     ): TallyResult {
         val size = board.size
-        val foundWords = mutableListOf<FormedWord>()
+
+        data class RawCandidate(
+            val word: String,
+            val direction: WordDirection,
+            val startRow: Int,
+            val startCol: Int,
+            val cells: List<Pair<Int, Int>>,
+            val isValid: Boolean
+        )
+
+        val rawCandidates = mutableListOf<RawCandidate>()
 
         // 1. Scan Horizontal words (row by row, left to right)
         for (r in 0 until size) {
@@ -922,14 +1166,13 @@ object WordsWorthLogic {
                     }
                     if (sb.length >= 2) {
                         val text = sb.toString()
-                        foundWords.add(
-                            FormedWord(
+                        rawCandidates.add(
+                            RawCandidate(
                                 word = text,
                                 direction = WordDirection.HORIZONTAL,
                                 startRow = r,
                                 startCol = startC,
                                 cells = cells,
-                                rawPoints = wordRawScore(text, language, japaneseVerbRule, verbDictionary),
                                 isValid = dictionary.contains(text)
                             )
                         )
@@ -957,14 +1200,13 @@ object WordsWorthLogic {
                     }
                     if (sb.length >= 2) {
                         val text = sb.toString()
-                        foundWords.add(
-                            FormedWord(
+                        rawCandidates.add(
+                            RawCandidate(
                                 word = text,
                                 direction = WordDirection.VERTICAL,
                                 startRow = startR,
                                 startCol = c,
                                 cells = cells,
-                                rawPoints = wordRawScore(text, language, japaneseVerbRule, verbDictionary),
                                 isValid = dictionary.contains(text)
                             )
                         )
@@ -973,6 +1215,63 @@ object WordsWorthLogic {
                     r++
                 }
             }
+        }
+
+        // Score valid words: the first valid word to use each sprinkle claims double points for it
+        fun candidateKey(c: RawCandidate) = "${c.direction}_${c.startRow}_${c.startCol}_${c.word}"
+        fun formedWordKey(fw: FormedWord) = "${fw.direction}_${fw.startRow}_${fw.startCol}_${fw.word}"
+
+        val prevWordKeys = previouslyValidatedWords
+            .filter { it.isValid && !it.isDuplicateUnscored }
+            .map { formedWordKey(it) }
+            .toSet()
+
+        val validCandidates = rawCandidates.filter { it.isValid }
+        // Preserve claimed sprinkles for words previously validated in earlier turns
+        val sortedValidCandidates = validCandidates.sortedBy { cand ->
+            if (candidateKey(cand) in prevWordKeys) 0 else 1
+        }
+
+        val claimedSprinkles = mutableSetOf<Pair<Int, Int>>()
+        val rawPointsByCandidateKey = mutableMapOf<String, Int>()
+
+        for (cand in sortedValidCandidates) {
+            val (points, newlyClaimed) = calculateWordRawScore(
+                word = cand.word,
+                cells = cand.cells,
+                sprinkledCells = sprinkledCells,
+                claimedSprinkles = claimedSprinkles,
+                language = language,
+                japaneseVerbRule = japaneseVerbRule,
+                verbDictionary = verbDictionary
+            )
+            claimedSprinkles.addAll(newlyClaimed)
+            rawPointsByCandidateKey[candidateKey(cand)] = points
+        }
+
+        val foundWords = rawCandidates.map { cand ->
+            val points = if (cand.isValid) {
+                rawPointsByCandidateKey[candidateKey(cand)] ?: 0
+            } else {
+                calculateWordRawScore(
+                    word = cand.word,
+                    cells = cand.cells,
+                    sprinkledCells = emptySet(),
+                    claimedSprinkles = emptySet(),
+                    language = language,
+                    japaneseVerbRule = japaneseVerbRule,
+                    verbDictionary = verbDictionary
+                ).first
+            }
+            FormedWord(
+                word = cand.word,
+                direction = cand.direction,
+                startRow = cand.startRow,
+                startCol = cand.startCol,
+                cells = cand.cells,
+                rawPoints = points,
+                isValid = cand.isValid
+            )
         }
 
         // 3. Determine per-cell validation state (invalid words override valid words on shared intersections)

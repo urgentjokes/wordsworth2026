@@ -71,6 +71,8 @@ fun WordsWorthApp() {
             onChangeJapaneseVerbRule = gameState::changeJapaneseVerbRule,
             isHapticFeedbackEnabled = gameState.isHapticFeedbackEnabled,
             onChangeHapticFeedbackEnabled = gameState::changeHapticFeedbackEnabled,
+            letterSprinkleMode = gameState.letterSprinkleMode,
+            onChangeLetterSprinkleMode = gameState::changeLetterSprinkleMode,
             allowDuplicateWordPoints = gameState.allowDuplicateWordPoints,
             onChangeAllowDuplicateWordPoints = gameState::changeAllowDuplicateWordPoints,
             savedGamesCount = gameState.savedGames.size,
@@ -125,6 +127,7 @@ fun WordsWorthApp() {
             japaneseVerbRule = gameState.japaneseVerbRule,
             verbDictionary = gameState.japaneseVerbDictionary,
             isHapticFeedbackEnabled = gameState.isHapticFeedbackEnabled,
+            sprinkledCells = gameState.sprinkledCells,
             onToggleLanguage = gameState::toggleGameLanguage,
             pendingRomaji = gameState.pendingRomaji,
             onKeyAction = gameState::onKeyAction

@@ -92,7 +92,11 @@ fun WordsWorthDialogs(gameState: WordsWorthGameState) {
                     dictionary = gameState.dictionary,
                     scoringMode = gameState.scoringMode,
                     previouslyValidatedWords = gameState.validatedWordsHistory,
-                    allowDuplicateWordPoints = gameState.allowDuplicateWordPoints
+                    allowDuplicateWordPoints = gameState.allowDuplicateWordPoints,
+                    language = gameState.gameLanguage,
+                    japaneseVerbRule = gameState.japaneseVerbRule,
+                    verbDictionary = gameState.japaneseVerbDictionary,
+                    sprinkledCells = gameState.sprinkledCells
                 ).totalScore
             } else {
                 0

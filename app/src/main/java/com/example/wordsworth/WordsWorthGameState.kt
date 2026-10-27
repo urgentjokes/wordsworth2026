@@ -129,6 +129,9 @@ class WordsWorthGameState(
     /** Loaded Japanese verb dictionary from all_japanese_verbs_hiragana.txt. */
     var japaneseVerbDictionary by mutableStateOf<Set<String>>(emptySet())
 
+    /** Active letter sprinkle density mode ([LetterSprinkleMode]). */
+    var letterSprinkleMode by mutableStateOf(WordsWorthLogic.loadLetterSprinkleMode(context))
+
     /**
      * Validated words recorded earlier in the current game session.
      * Used when [scoringMode] is [ScoringMode.CUMULATIVE_EXTENDED] so extending a previously
@@ -137,9 +140,16 @@ class WordsWorthGameState(
      */
     val validatedWordsHistory = mutableStateListOf<FormedWord>()
 
-    // Preserved boards and elapsed time per language to prevent loss when toggling languages
-    private var boardEn: Array<Array<Char?>> = WordsWorthLogic.createBlankBoard(WordsWorthLogic.BOARD_SIZE)
-    private var boardJa: Array<Array<Char?>> = WordsWorthLogic.createBlankBoard(WordsWorthLogic.BOARD_SIZE)
+    // Preserved boards, sprinkled cells, and elapsed time per language to prevent loss when toggling languages
+    private var sprinkledCellsEn: Set<Pair<Int, Int>> = emptySet()
+    private var sprinkledCellsJa: Set<Pair<Int, Int>> = emptySet()
+
+    private var boardEn: Array<Array<Char?>> = WordsWorthLogic.createBlankBoard(WordsWorthLogic.BOARD_SIZE).also {
+        sprinkledCellsEn = WordsWorthLogic.sprinkleLetters(it, letterSprinkleMode, GameLanguage.ENGLISH)
+    }
+    private var boardJa: Array<Array<Char?>> = WordsWorthLogic.createBlankBoard(WordsWorthLogic.BOARD_SIZE).also {
+        sprinkledCellsJa = WordsWorthLogic.sprinkleLetters(it, letterSprinkleMode, GameLanguage.JAPANESE)
+    }
     private var elapsedSecondsEn: Int = 0
     private var elapsedSecondsJa: Int = 0
     private val validatedWordsHistoryEn = mutableListOf<FormedWord>()
@@ -151,6 +161,14 @@ class WordsWorthGameState(
             Array(size) { c -> source[r][c] }
         }
     }
+
+    /** Coordinates `(row, col)` of squares currently populated with non-deletable sprinkled letters. */
+    var sprinkledCells by mutableStateOf<Set<Pair<Int, Int>>>(
+        if (WordsWorthLogic.loadGameLanguage(context) == GameLanguage.ENGLISH) sprinkledCellsEn else sprinkledCellsJa
+    )
+
+    /** Returns `true` if the square at ([row], [col]) contains a non-deletable sprinkled letter. */
+    fun isSprinkledCell(row: Int, col: Int): Boolean = (row to col) in sprinkledCells
 
     /** Current 2D crossword board matrix (`null` = empty, `'#'` = blocked, letter/kana = placed). */
     var board by mutableStateOf(
@@ -168,11 +186,13 @@ class WordsWorthGameState(
         // 1. Save active state to current language slot
         if (gameLanguage == GameLanguage.ENGLISH) {
             boardEn = copyBoard(board)
+            sprinkledCellsEn = sprinkledCells
             elapsedSecondsEn = elapsedSeconds
             validatedWordsHistoryEn.clear()
             validatedWordsHistoryEn.addAll(validatedWordsHistory)
         } else {
             boardJa = copyBoard(board)
+            sprinkledCellsJa = sprinkledCells
             elapsedSecondsJa = elapsedSeconds
             validatedWordsHistoryJa.clear()
             validatedWordsHistoryJa.addAll(validatedWordsHistory)
@@ -185,13 +205,21 @@ class WordsWorthGameState(
 
         // 3. Restore target language state
         val targetBoard = if (nextLang == GameLanguage.ENGLISH) boardEn else boardJa
-        board = copyBoard(targetBoard)
-        boardSize = targetBoard.size
+        var targetSprinkled = if (nextLang == GameLanguage.ENGLISH) sprinkledCellsEn else sprinkledCellsJa
+        val hasTargetLetters = targetBoard.any { row -> row.any { WordsWorthLogic.isLetterCell(it) } }
+        val boardToRestore = copyBoard(targetBoard)
+        if (!hasTargetLetters && letterSprinkleMode != LetterSprinkleMode.NONE) {
+            targetSprinkled = WordsWorthLogic.sprinkleLetters(boardToRestore, letterSprinkleMode, nextLang)
+            if (nextLang == GameLanguage.ENGLISH) sprinkledCellsEn = targetSprinkled else sprinkledCellsJa = targetSprinkled
+        }
+        board = boardToRestore
+        sprinkledCells = targetSprinkled
+        boardSize = boardToRestore.size
         elapsedSeconds = if (nextLang == GameLanguage.ENGLISH) elapsedSecondsEn else elapsedSecondsJa
         validatedWordsHistory.clear()
         validatedWordsHistory.addAll(if (nextLang == GameLanguage.ENGLISH) validatedWordsHistoryEn else validatedWordsHistoryJa)
 
-        focusedCell = null
+        focusedCell = firstEmptyOrAvailableCell(boardToRestore)
         pendingRomaji = ""
         lastPlacedCell = null
         selectedLetter = if (nextLang == GameLanguage.ENGLISH) 'A' else null
@@ -276,7 +304,7 @@ class WordsWorthGameState(
     var lastPlacedCell by mutableStateOf<Pair<Int, Int>?>(null)
 
     /** Coordinates `(row, col)` of the currently focused square on the board. */
-    var focusedCell by mutableStateOf<Pair<Int, Int>?>(0 to 0)
+    var focusedCell by mutableStateOf<Pair<Int, Int>?>(firstEmptyOrAvailableCell(board))
 
     /** Active typing direction (`HORIZONTAL` = Across `→`, `VERTICAL` = Down `↓`). */
     var focusDirection by mutableStateOf(WordDirection.HORIZONTAL)
@@ -327,11 +355,18 @@ class WordsWorthGameState(
         return null
     }
 
-    /** Finds the first unoccupied non-blocked square on [board], falling back to [firstAvailableCell]. */
+    /** Finds the first unoccupied non-blocked square on [board] that is not a sprinkled letter, falling back to [firstAvailableCell]. */
     fun firstEmptyOrAvailableCell(b: Array<Array<Char?>>): Pair<Int, Int>? {
         for (r in b.indices) {
             for (c in b[r].indices) {
-                if (!WordsWorthLogic.isBlockedCell(b[r][c]) && b[r][c] == null) {
+                if (!WordsWorthLogic.isBlockedCell(b[r][c]) && b[r][c] == null && !isSprinkledCell(r, c)) {
+                    return r to c
+                }
+            }
+        }
+        for (r in b.indices) {
+            for (c in b[r].indices) {
+                if (!WordsWorthLogic.isBlockedCell(b[r][c]) && !isSprinkledCell(r, c)) {
                     return r to c
                 }
             }
@@ -343,14 +378,16 @@ class WordsWorthGameState(
     fun applyAllBlank() {
         commitPendingRomaji()
         isRandomPatternMode = false
-        val newBoard = WordsWorthLogic.createBlankBoard(boardSize)
-        board = newBoard
+        val baseBoard = WordsWorthLogic.createBlankBoard(boardSize)
+        val newSprinkled = WordsWorthLogic.sprinkleLetters(baseBoard, letterSprinkleMode, gameLanguage)
+        board = baseBoard
+        sprinkledCells = newSprinkled
         resumedGameId = null
         validatedWordsHistory.clear()
         isBoardLocked = false
-        focusedCell = firstAvailableCell(newBoard)
+        focusedCell = firstEmptyOrAvailableCell(baseBoard)
         focusDirection = WordDirection.HORIZONTAL
-        tallyResult = null
+        tallyResult = if (isDictionaryLoaded && letterSprinkleMode != LetterSprinkleMode.NONE) evaluateBoard(baseBoard) else null
         isTimerRunning = false
         elapsedSeconds = 0
         pendingRomaji = ""
@@ -361,14 +398,16 @@ class WordsWorthGameState(
     fun applyRandomPattern() {
         commitPendingRomaji()
         isRandomPatternMode = true
-        val newBoard = WordsWorthLogic.generateRandomPatternBoard(boardSize)
-        board = newBoard
+        val baseBoard = WordsWorthLogic.generateRandomPatternBoard(boardSize)
+        val newSprinkled = WordsWorthLogic.sprinkleLetters(baseBoard, letterSprinkleMode, gameLanguage)
+        board = baseBoard
+        sprinkledCells = newSprinkled
         resumedGameId = null
         validatedWordsHistory.clear()
         isBoardLocked = false
-        focusedCell = firstAvailableCell(newBoard)
+        focusedCell = firstEmptyOrAvailableCell(baseBoard)
         focusDirection = WordDirection.HORIZONTAL
-        tallyResult = null
+        tallyResult = if (isDictionaryLoaded && letterSprinkleMode != LetterSprinkleMode.NONE) evaluateBoard(baseBoard) else null
         isTimerRunning = false
         elapsedSeconds = 0
         pendingRomaji = ""
@@ -398,18 +437,20 @@ class WordsWorthGameState(
         if (newSize == boardSize) return
         commitPendingRomaji()
         boardSize = newSize
-        val newBoard = if (isRandomPatternMode) {
+        val baseBoard = if (isRandomPatternMode) {
             WordsWorthLogic.generateRandomPatternBoard(newSize)
         } else {
             WordsWorthLogic.createBlankBoard(newSize)
         }
-        board = newBoard
+        val newSprinkled = WordsWorthLogic.sprinkleLetters(baseBoard, letterSprinkleMode, gameLanguage)
+        board = baseBoard
+        sprinkledCells = newSprinkled
         resumedGameId = null
         validatedWordsHistory.clear()
         isBoardLocked = false
-        focusedCell = firstAvailableCell(newBoard)
+        focusedCell = firstEmptyOrAvailableCell(baseBoard)
         focusDirection = WordDirection.HORIZONTAL
-        tallyResult = null
+        tallyResult = if (isDictionaryLoaded && letterSprinkleMode != LetterSprinkleMode.NONE) evaluateBoard(baseBoard) else null
         isTimerRunning = false
         elapsedSeconds = 0
         pendingRomaji = ""
@@ -422,6 +463,7 @@ class WordsWorthGameState(
      */
     fun updateCell(row: Int, col: Int, letter: Char?) {
         if (isBoardLocked) return
+        if (isSprinkledCell(row, col)) return
         if (WordsWorthLogic.isBlockedCell(board.getOrNull(row)?.getOrNull(col))) {
             return
         }
@@ -513,51 +555,54 @@ class WordsWorthGameState(
         }
     }
 
-    /** Advances [focusedCell] one square forward along [direction] if the next square is open. */
-    fun advanceFocusFrom(row: Int, col: Int, direction: WordDirection = focusDirection) {
+    /** Finds the next non-blocked, non-sprinkled square along [direction] from `(row, col)`. */
+    fun getNextEditableCell(row: Int, col: Int, direction: WordDirection = focusDirection): Pair<Int, Int>? {
         val size = board.size
-        when (direction) {
-            WordDirection.HORIZONTAL -> {
-                val nextCol = col + 1
-                if (nextCol < size && !WordsWorthLogic.isBlockedCell(board[row][nextCol])) {
-                    focusedCell = row to nextCol
-                } else {
-                    focusedCell = row to col
-                }
+        var r = row
+        var c = col
+        while (true) {
+            when (direction) {
+                WordDirection.HORIZONTAL -> c++
+                WordDirection.VERTICAL -> r++
             }
-            WordDirection.VERTICAL -> {
-                val nextRow = row + 1
-                if (nextRow < size && !WordsWorthLogic.isBlockedCell(board[nextRow][col])) {
-                    focusedCell = nextRow to col
-                } else {
-                    focusedCell = row to col
-                }
+            if (r !in 0 until size || c !in 0 until size) return null
+            if (WordsWorthLogic.isBlockedCell(board[r][c])) return null
+            if (!isSprinkledCell(r, c)) {
+                return r to c
             }
         }
     }
 
-    fun getNextOpenCell(row: Int, col: Int, direction: WordDirection = focusDirection): Pair<Int, Int>? {
-        val size = board.size
-        return when (direction) {
-            WordDirection.HORIZONTAL -> {
-                val nextC = col + 1
-                if (nextC < size && !WordsWorthLogic.isBlockedCell(board[row][nextC])) {
-                    row to nextC
-                } else null
-            }
-            WordDirection.VERTICAL -> {
-                val nextR = row + 1
-                if (nextR < size && !WordsWorthLogic.isBlockedCell(board[nextR][col])) {
-                    nextR to col
-                } else null
-            }
+    /** Advances [focusedCell] forward along [direction], skipping any sprinkled letters. */
+    fun advanceFocusFrom(row: Int, col: Int, direction: WordDirection = focusDirection) {
+        val next = getNextEditableCell(row, col, direction)
+        if (next != null) {
+            focusedCell = next
+        } else {
+            focusedCell = row to col
         }
+    }
+
+    fun getNextOpenCell(row: Int, col: Int, direction: WordDirection = focusDirection): Pair<Int, Int>? =
+        getNextEditableCell(row, col, direction)
+
+    /** Returns the current focused cell if editable, or the next editable cell along [focusDirection]. */
+    fun getEditableTargetCell(): Pair<Int, Int>? {
+        val curr = focusedCell ?: return firstEmptyOrAvailableCell(board)
+        val (r, c) = curr
+        if (WordsWorthLogic.isBlockedCell(board.getOrNull(r)?.getOrNull(c))) {
+            return firstEmptyOrAvailableCell(board)
+        }
+        if (isSprinkledCell(r, c)) {
+            return getNextEditableCell(r, c, focusDirection) ?: firstEmptyOrAvailableCell(board)
+        }
+        return curr
     }
 
     /** Commits any pending buffer characters (e.g. pending "n" -> 'ん') when tapping away or validating. */
     fun commitPendingRomaji() {
         if (pendingRomaji.isEmpty()) return
-        val target = focusedCell ?: return
+        val target = getEditableTargetCell() ?: return
         val (r, c) = target
         val kanaList = KanaConverter.commitBuffer(pendingRomaji)
         pendingRomaji = ""
@@ -567,7 +612,7 @@ class WordsWorthGameState(
             for (kana in kanaList) {
                 updateCell(currR, currC, kana)
                 lastPlacedCell = currR to currC
-                val next = getNextOpenCell(currR, currC, focusDirection)
+                val next = getNextEditableCell(currR, currC, focusDirection)
                 if (next != null) {
                     currR = next.first
                     currC = next.second
@@ -583,7 +628,7 @@ class WordsWorthGameState(
     fun onRomajiKeyInput(keyChar: Char) {
         if (isBoardLocked) return
         selectedLetter = keyChar.uppercaseChar()
-        val start = focusedCell ?: firstAvailableCell(board) ?: return
+        val start = getEditableTargetCell() ?: return
         val (r, c) = start
         if (WordsWorthLogic.isBlockedCell(board.getOrNull(r)?.getOrNull(c))) return
 
@@ -596,7 +641,7 @@ class WordsWorthGameState(
             for (kana in feedResult.producedKana) {
                 updateCell(currR, currC, kana)
                 lastPlacedCell = currR to currC
-                val next = getNextOpenCell(currR, currC, focusDirection)
+                val next = getNextEditableCell(currR, currC, focusDirection)
                 if (next != null) {
                     currR = next.first
                     currC = next.second
@@ -618,15 +663,15 @@ class WordsWorthGameState(
         val target = focusedCell ?: return
         val (r, c) = target
         val currentCh = board[r][c]
-        if (currentCh != null && WordsWorthLogic.isLetterCell(currentCh)) {
+        if (currentCh != null && WordsWorthLogic.isLetterCell(currentCh) && !isSprinkledCell(r, c)) {
             val modified = KanaConverter.cycleModifier(currentCh)
             updateCell(r, c, modified)
         } else {
             val last = lastPlacedCell
-            if (last != null && WordsWorthLogic.isLetterCell(board[last.first][last.second])) {
+            if (last != null && !isSprinkledCell(last.first, last.second) && WordsWorthLogic.isLetterCell(board[last.first][last.second])) {
                 val modified = KanaConverter.cycleModifier(board[last.first][last.second]!!)
                 updateCell(last.first, last.second, modified)
-            } else {
+            } else if (!isSprinkledCell(r, c)) {
                 updateCell(r, c, 'っ')
                 lastPlacedCell = r to c
                 advanceFocusFrom(r, c, focusDirection)
@@ -635,7 +680,7 @@ class WordsWorthGameState(
     }
 
     /**
-     * Erases pending buffer or current cell, or steps back and erases.
+     * Erases pending buffer or current cell, or steps back skipping sprinkled cells and erases.
      */
     fun onClearInput() {
         if (isBoardLocked) return
@@ -643,19 +688,34 @@ class WordsWorthGameState(
             pendingRomaji = pendingRomaji.dropLast(1)
             return
         }
-        val target = focusedCell ?: firstAvailableCell(board) ?: return
+        val target = focusedCell ?: firstEmptyOrAvailableCell(board) ?: return
         val (r, c) = target
-        if (WordsWorthLogic.isLetterCell(board[r][c])) {
+
+        // If currently focused on an editable cell containing a player-placed letter, clear it.
+        if (!isSprinkledCell(r, c) && WordsWorthLogic.isLetterCell(board[r][c])) {
             updateCell(r, c, null)
             focusedCell = r to c
-        } else {
-            val prevCell = when (focusDirection) {
-                WordDirection.HORIZONTAL -> if (c > 0) r to (c - 1) else null
-                WordDirection.VERTICAL -> if (r > 0) (r - 1) to c else null
+            return
+        }
+
+        // Otherwise (focused cell is empty or sprinkled), step backward skipping sprinkled cells
+        // until an editable cell is found.
+        val size = board.size
+        var currR = r
+        var currC = c
+        while (true) {
+            when (focusDirection) {
+                WordDirection.HORIZONTAL -> currC--
+                WordDirection.VERTICAL -> currR--
             }
-            if (prevCell != null && !WordsWorthLogic.isBlockedCell(board[prevCell.first][prevCell.second])) {
-                focusedCell = prevCell
-                updateCell(prevCell.first, prevCell.second, null)
+            if (currR !in 0 until size || currC !in 0 until size) return
+            if (WordsWorthLogic.isBlockedCell(board[currR][currC])) return
+            if (!isSprinkledCell(currR, currC)) {
+                focusedCell = currR to currC
+                if (WordsWorthLogic.isLetterCell(board[currR][currC])) {
+                    updateCell(currR, currC, null)
+                }
+                return
             }
         }
     }
@@ -684,14 +744,14 @@ class WordsWorthGameState(
                         if (ch in 'A'..'Z' || ch in 'a'..'z') {
                             onRomajiKeyInput(ch)
                         } else {
-                            val target = focusedCell ?: firstAvailableCell(board) ?: return
+                            val target = getEditableTargetCell() ?: return
                             updateCell(target.first, target.second, ch)
                             lastPlacedCell = target
                             advanceFocusFrom(target.first, target.second, focusDirection)
                         }
                     } else {
                         if (ch in 'A'..'Z' || ch in 'a'..'z') {
-                            val target = focusedCell ?: firstAvailableCell(board) ?: return
+                            val target = getEditableTargetCell() ?: return
                             updateCell(target.first, target.second, ch.uppercaseChar())
                             advanceFocusFrom(target.first, target.second, focusDirection)
                         }
@@ -714,7 +774,7 @@ class WordsWorthGameState(
                 onRomajiKeyInput(letter)
                 return null
             }
-            val target = focusedCell ?: firstAvailableCell(board) ?: return null
+            val target = getEditableTargetCell() ?: return null
             val (r, c) = target
             val old = board[r][c]
             updateCell(r, c, letter)
@@ -722,7 +782,7 @@ class WordsWorthGameState(
             advanceFocusFrom(r, c, focusDirection)
             return (r to c) to old
         } else {
-            val target = focusedCell ?: firstAvailableCell(board) ?: return null
+            val target = getEditableTargetCell() ?: return null
             val (r, c) = target
             val old = board[r][c]
             updateCell(r, c, letter.uppercaseChar())
@@ -741,6 +801,12 @@ class WordsWorthGameState(
         undoPlacement: Pair<Pair<Int, Int>, Char?>?
     ) {
         if (isBoardLocked) return
+        if (isSprinkledCell(row, col)) {
+            undoPlacement?.let { (placedCell, oldChar) ->
+                updateCell(placedCell.first, placedCell.second, oldChar)
+            }
+            return
+        }
         undoPlacement?.let { (placedCell, oldChar) ->
             if (placedCell.first != row || placedCell.second != col) {
                 updateCell(placedCell.first, placedCell.second, oldChar)
@@ -821,7 +887,7 @@ class WordsWorthGameState(
                     if (gameLanguage == GameLanguage.JAPANESE) {
                         onRomajiKeyInput(letter)
                     } else {
-                        val target = focusedCell ?: firstAvailableCell(board) ?: return true
+                        val target = getEditableTargetCell() ?: return true
                         updateCell(target.first, target.second, letter)
                         advanceFocusFrom(target.first, target.second, focusDirection)
                     }
@@ -894,6 +960,7 @@ class WordsWorthGameState(
             boardSize = size
             isRandomPatternMode = restoredBoard.any { row -> row.any { WordsWorthLogic.isBlockedCell(it) } }
             board = restoredBoard
+            sprinkledCells = emptySet()
 
             // Restore language from saved entry
             val entryLang = entry.language
@@ -920,6 +987,7 @@ class WordsWorthGameState(
         isRandomPatternMode = false
         val newBoard = WordsWorthLogic.exampleBoard(boardSize, gameLanguage)
         board = newBoard
+        sprinkledCells = emptySet()
         resumedGameId = null
         validatedWordsHistory.clear()
         isBoardLocked = false
@@ -936,18 +1004,20 @@ class WordsWorthGameState(
     /** Resets the active board and timer for the current game language. */
     fun resetBoardAndTimer() {
         commitPendingRomaji()
-        val newBoard = if (isRandomPatternMode) {
+        val baseBoard = if (isRandomPatternMode) {
             WordsWorthLogic.generateRandomPatternBoard(boardSize)
         } else {
             WordsWorthLogic.createBlankBoard(boardSize)
         }
-        board = newBoard
+        val newSprinkled = WordsWorthLogic.sprinkleLetters(baseBoard, letterSprinkleMode, gameLanguage)
+        board = baseBoard
+        sprinkledCells = newSprinkled
         resumedGameId = null
         validatedWordsHistory.clear()
         isBoardLocked = false
-        focusedCell = firstAvailableCell(newBoard)
+        focusedCell = firstEmptyOrAvailableCell(baseBoard)
         focusDirection = WordDirection.HORIZONTAL
-        tallyResult = null
+        tallyResult = if (isDictionaryLoaded && letterSprinkleMode != LetterSprinkleMode.NONE) evaluateBoard(baseBoard) else null
         isTimerRunning = false
         elapsedSeconds = 0
         pendingRomaji = ""
@@ -1000,6 +1070,16 @@ class WordsWorthGameState(
     fun changeHapticFeedbackEnabled(enabled: Boolean) {
         isHapticFeedbackEnabled = enabled
         WordsWorthLogic.saveHapticFeedbackEnabled(context, enabled)
+    }
+
+    /** Updates the letter sprinkle density preference and saves it to SharedPreferences. */
+    fun changeLetterSprinkleMode(newMode: LetterSprinkleMode) {
+        letterSprinkleMode = newMode
+        WordsWorthLogic.saveLetterSprinkleMode(context, newMode)
+        // If the player has not started playing yet in this round, update the board immediately
+        if (lastPlacedCell == null && elapsedSeconds == 0 && validatedWordsHistory.isEmpty() && !isBoardLocked) {
+            resetBoardAndTimer()
+        }
     }
 
     /** Clears all saved games from disk and from the in-memory [savedGames] list. */
@@ -1090,7 +1170,8 @@ class WordsWorthGameState(
             allowDuplicateWordPoints = allowDuplicates,
             language = gameLanguage,
             japaneseVerbRule = verbRule,
-            verbDictionary = verbs
+            verbDictionary = verbs,
+            sprinkledCells = sprinkledCells
         )
         // Record all valid words formed during this session into history
         for (word in result.validWords) {

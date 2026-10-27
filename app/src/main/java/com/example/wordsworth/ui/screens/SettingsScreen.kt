@@ -25,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,7 +37,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.wordsworth.JapaneseVerbRule
 import com.example.wordsworth.KeyboardLayout
+import com.example.wordsworth.LetterSprinkleMode
 import com.example.wordsworth.ScoringMode
+import kotlin.math.roundToInt
 
 /**
  * Settings screen accessible via the gear icon in the top-right corner of the main screen.
@@ -61,6 +64,8 @@ fun SettingsScreen(
     onChangeJapaneseVerbRule: (JapaneseVerbRule) -> Unit,
     isHapticFeedbackEnabled: Boolean = true,
     onChangeHapticFeedbackEnabled: (Boolean) -> Unit = {},
+    letterSprinkleMode: LetterSprinkleMode = LetterSprinkleMode.NONE,
+    onChangeLetterSprinkleMode: (LetterSprinkleMode) -> Unit = {},
     savedGamesCount: Int,
     onClearSavedGames: () -> Unit,
     onClearBoard: () -> Unit = {},
@@ -436,7 +441,84 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 5. Previous Games History Card
+                // 5. Sprinkle Random Letters Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Sprinkle Letters",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Pre-fill random squares on the board with random letters (applies to English and Japanese when starting or clearing a board).",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Current selected position label & description
+                        Text(
+                            text = when (letterSprinkleMode) {
+                                LetterSprinkleMode.NONE -> "None: zero"
+                                LetterSprinkleMode.FEW -> "Few: 5 percent of available squares"
+                                LetterSprinkleMode.SOME -> "Some: 10 pct of available squares"
+                                LetterSprinkleMode.MANY -> "Many: 15 pct"
+                            },
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Discrete 4-step Slider: None (0), Few (1), Some (2), Many (3)
+                        Slider(
+                            value = letterSprinkleMode.ordinal.toFloat(),
+                            onValueChange = { floatVal ->
+                                val index = floatVal.roundToInt().coerceIn(0, LetterSprinkleMode.entries.size - 1)
+                                onChangeLetterSprinkleMode(LetterSprinkleMode.entries[index])
+                            },
+                            valueRange = 0f..3f,
+                            steps = 2,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Labels below the slider
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            LetterSprinkleMode.entries.forEach { mode ->
+                                val isSelected = mode == letterSprinkleMode
+                                Text(
+                                    text = mode.label,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 6. Previous Games History Card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
