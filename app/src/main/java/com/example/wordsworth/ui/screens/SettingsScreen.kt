@@ -1,5 +1,10 @@
 package com.example.wordsworth.ui.screens
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,7 +14,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +27,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,8 +37,16 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -480,7 +496,15 @@ fun SettingsScreen(
 
                         Spacer(modifier = Modifier.height(6.dp))
 
+                        val sliderInteractionSource = remember { MutableInteractionSource() }
+                        val isSliderPressed by sliderInteractionSource.collectIsPressedAsState()
+                        val isSliderDragged by sliderInteractionSource.collectIsDraggedAsState()
+                        val isInteracting = isSliderPressed || isSliderDragged
+                        val activeTrackColor = MaterialTheme.colorScheme.primary
+                        val inactiveTrackColor = MaterialTheme.colorScheme.secondaryContainer
+
                         // Discrete 4-step Slider: None (0), Few (1), Some (2), Many (3)
+                        @OptIn(ExperimentalMaterial3Api::class)
                         Slider(
                             value = letterSprinkleMode.ordinal.toFloat(),
                             onValueChange = { floatVal ->
@@ -489,7 +513,111 @@ fun SettingsScreen(
                             },
                             valueRange = 0f..3f,
                             steps = 2,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            interactionSource = sliderInteractionSource,
+                            thumb = { sliderState ->
+                                val range = sliderState.valueRange.endInclusive - sliderState.valueRange.start
+                                val fraction = if (range > 0f) {
+                                    ((sliderState.value - sliderState.valueRange.start) / range).coerceIn(0f, 1f)
+                                } else 0f
+                                val cornerRadius = 8.dp
+                                // Aligns the thumb center squarely with the track stop indicator circle
+                                // at each position, eliminating the leftward overshoot at None.
+                                val xOffset = cornerRadius * (1f - 2f * fraction)
+                                val thumbWidth = if (isInteracting) 2.dp else 4.dp
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = xOffset)
+                                        .size(width = thumbWidth, height = 44.dp)
+                                        .background(
+                                            color = activeTrackColor,
+                                            shape = RoundedCornerShape(2.dp)
+                                        )
+                                )
+                            },
+                            track = { sliderState ->
+                                val range = sliderState.valueRange.endInclusive - sliderState.valueRange.start
+                                val fraction = if (range > 0f) {
+                                    ((sliderState.value - sliderState.valueRange.start) / range).coerceIn(0f, 1f)
+                                } else 0f
+                                Canvas(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(16.dp)
+                                ) {
+                                    val trackWidth = size.width
+                                    val trackHeight = size.height
+                                    val cornerRadius = trackHeight / 2f
+                                    val gap = 6.dp.toPx()
+                                    val insideCornerRadius = 2.dp.toPx()
+                                    val tickRadius = 2.dp.toPx()
+                                    val thumbCenter = cornerRadius + (trackWidth - 2f * cornerRadius) * fraction
+
+                                    if (fraction <= 0f) {
+                                        // None: full inactive track with rounded ends
+                                        drawRoundRect(
+                                            color = inactiveTrackColor,
+                                            topLeft = Offset(0f, 0f),
+                                            size = Size(trackWidth, trackHeight),
+                                            cornerRadius = CornerRadius(cornerRadius, cornerRadius)
+                                        )
+                                    } else if (fraction >= 1f) {
+                                        // Many: full active track with rounded ends
+                                        drawRoundRect(
+                                            color = activeTrackColor,
+                                            topLeft = Offset(0f, 0f),
+                                            size = Size(trackWidth, trackHeight),
+                                            cornerRadius = CornerRadius(cornerRadius, cornerRadius)
+                                        )
+                                    } else {
+                                        // Few / Some: Active section to the left of the thumb
+                                        val activeEnd = thumbCenter - gap
+                                        if (activeEnd > 0f) {
+                                            val activeRect = RoundRect(
+                                                rect = Rect(Offset(0f, 0f), Size(activeEnd, trackHeight)),
+                                                topLeft = CornerRadius(cornerRadius, cornerRadius),
+                                                bottomLeft = CornerRadius(cornerRadius, cornerRadius),
+                                                topRight = CornerRadius(insideCornerRadius, insideCornerRadius),
+                                                bottomRight = CornerRadius(insideCornerRadius, insideCornerRadius)
+                                            )
+                                            val activePath = Path().apply { addRoundRect(activeRect) }
+                                            drawPath(activePath, activeTrackColor)
+                                        }
+
+                                        // Inactive section to the right of the thumb
+                                        val inactiveStart = thumbCenter + gap
+                                        if (inactiveStart < trackWidth) {
+                                            val inactiveRect = RoundRect(
+                                                rect = Rect(Offset(inactiveStart, 0f), Size(trackWidth - inactiveStart, trackHeight)),
+                                                topLeft = CornerRadius(insideCornerRadius, insideCornerRadius),
+                                                bottomLeft = CornerRadius(insideCornerRadius, insideCornerRadius),
+                                                topRight = CornerRadius(cornerRadius, cornerRadius),
+                                                bottomRight = CornerRadius(cornerRadius, cornerRadius)
+                                            )
+                                            val inactivePath = Path().apply { addRoundRect(inactiveRect) }
+                                            drawPath(inactivePath, inactiveTrackColor)
+                                        }
+                                    }
+
+                                    // Draw stop indicator circles at each discrete step (None, Few, Some, Many)
+                                    for (i in 0..3) {
+                                        val tickFraction = i / 3f
+                                        val tickX = cornerRadius + (trackWidth - 2f * cornerRadius) * tickFraction
+                                        val dotColor = if (fraction <= 0f) {
+                                            activeTrackColor
+                                        } else if (fraction >= 1f) {
+                                            inactiveTrackColor
+                                        } else {
+                                            if (tickFraction <= fraction) inactiveTrackColor else activeTrackColor
+                                        }
+                                        drawCircle(
+                                            color = dotColor,
+                                            radius = tickRadius,
+                                            center = Offset(tickX, trackHeight / 2f)
+                                        )
+                                    }
+                                }
+                            }
                         )
 
                         // Labels below the slider
