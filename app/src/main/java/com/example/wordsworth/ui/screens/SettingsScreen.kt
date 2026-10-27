@@ -62,11 +62,13 @@ import kotlin.math.roundToInt
  *
  * Allows the player to configure:
  * 1. **Keyboard Layout**: Toggle between [KeyboardLayout.ALPHABETICAL] and [KeyboardLayout.QWERTY].
- * 2. **Extended Word Scoring**: Toggle between [ScoringMode.EXTENDED_DIFF_ONLY] ("New Letters Only")
- *    and [ScoringMode.CUMULATIVE_EXTENDED] ("Keep Base Word Points").
+ * 2. **Haptic Feedback**: Enable or disable vibration on tile taps and drags.
  * 3. **Duplicate Word Scoring**: Toggle whether placing the same valid word more than once awards
  *    points every time or only the first time it is used.
- * 4. **Previous Games History**: Clear all saved game entries and screenshots from disk.
+ * 4. **Japanese Verb / Caboose Rule**: Configure scoring rules for terminal hiragana caboose characters.
+ * 5. **Sprinkle Letters**: Pre-fill random board squares with random letters ([LetterSprinkleMode]).
+ * 6. **Previous Games History**: Clear all saved game entries and screenshots from disk.
+ * 7. **Board Actions**: Clear the current board or load the example puzzle.
  */
 @Composable
 fun SettingsScreen(
@@ -143,12 +145,7 @@ fun SettingsScreen(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Choose how the letter keys are arranged underneath the game board.",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+
                         Spacer(modifier = Modifier.height(12.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -196,7 +193,7 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Keyboard Haptic Feedback Card
+                // 2. Haptic Feedback Card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -218,95 +215,17 @@ fun SettingsScreen(
                                 .padding(end = 16.dp)
                         ) {
                             Text(
-                                text = "Keyboard Haptic Feedback",
+                                text = "Haptic feedback",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = if (isHapticFeedbackEnabled) {
-                                    "Vibrate slightly on keyboard tile taps and drags."
-                                } else {
-                                    "Keyboard vibration is turned off."
-                                },
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+
                         }
                         Switch(
                             checked = isHapticFeedbackEnabled,
                             onCheckedChange = onChangeHapticFeedbackEnabled
                         )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // 2. Extended Word Scoring Card
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Extended Word Scoring",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = scoringMode.description,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            ScoringMode.entries.forEach { option ->
-                                val isSelected = scoringMode == option
-                                if (isSelected) {
-                                    Button(
-                                        onClick = { onChangeScoringMode(option) },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(10.dp),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.primary
-                                        )
-                                    ) {
-                                        Text(
-                                            text = option.label,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            textAlign = TextAlign.Center
-                                        )
-                                    }
-                                } else {
-                                    OutlinedButton(
-                                        onClick = { onChangeScoringMode(option) },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(10.dp),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
-                                    ) {
-                                        Text(
-                                            text = option.label,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            textAlign = TextAlign.Center
-                                        )
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
 
@@ -328,16 +247,7 @@ fun SettingsScreen(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (allowDuplicateWordPoints) {
-                                "Placing the same valid word multiple times awards points for every instance."
-                            } else {
-                                "You can place the same valid word more than once, but you only get points the first time you use it."
-                            },
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+
                         Spacer(modifier = Modifier.height(12.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -475,23 +385,9 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Pre-fill random squares on the board with random letters (applies to English and Japanese when starting or clearing a board).",
+                            text = "Pre-fill random squares on the board with random letters. Random letters score 2x the first time used!",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Current selected position label & description
-                        Text(
-                            text = when (letterSprinkleMode) {
-                                LetterSprinkleMode.NONE -> "None: zero"
-                                LetterSprinkleMode.FEW -> "Few: 5 percent of available squares"
-                                LetterSprinkleMode.SOME -> "Some: 10 pct of available squares"
-                                LetterSprinkleMode.MANY -> "Many: 15 pct"
-                            },
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
                         )
 
                         Spacer(modifier = Modifier.height(6.dp))
@@ -681,7 +577,9 @@ fun SettingsScreen(
                     }
                 }
 
-                // 5. Board Actions Card
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 7. Board Actions Card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
