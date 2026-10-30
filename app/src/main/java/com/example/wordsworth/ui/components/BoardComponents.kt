@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -95,6 +96,21 @@ fun CrosswordBoardGrid(
     val currentOnClearCell by rememberUpdatedState(onClearCell)
     val currentSprinkledCells by rememberUpdatedState(sprinkledCells)
 
+    val displayStrings = remember(board, currentBoardSize, gameLanguage, japaneseVerbRule, verbDictionary) {
+        Array(currentBoardSize) { r ->
+            Array(currentBoardSize) { c ->
+                WordsWorthLogic.cellDisplayString(
+                    board = board,
+                    r = r,
+                    c = c,
+                    language = gameLanguage,
+                    japaneseVerbRule = japaneseVerbRule,
+                    verbDictionary = verbDictionary
+                )
+            }
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -154,14 +170,7 @@ fun CrosswordBoardGrid(
                         val validation = tallyResult?.cellValidations?.get(r to c)
                             ?: CellValidation.UNCHECKED
 
-                        val displayValue = WordsWorthLogic.cellDisplayString(
-                            board = board,
-                            r = r,
-                            c = c,
-                            language = gameLanguage,
-                            japaneseVerbRule = japaneseVerbRule,
-                            verbDictionary = verbDictionary
-                        )
+                        val displayValue = displayStrings.getOrNull(r)?.getOrNull(c) ?: ""
 
                         BoardCell(
                             letter = cellChar,

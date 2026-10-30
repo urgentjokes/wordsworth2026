@@ -1,5 +1,6 @@
 package com.example.wordsworth.ui.components
 
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -40,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,6 +61,7 @@ import com.example.wordsworth.SavedGameEntry
 import com.example.wordsworth.TallyResult
 import com.example.wordsworth.WordsWorthLogic
 import com.example.wordsworth.ui.theme.WordsWorthColors
+import java.io.File
 import java.util.Locale
 
 /**
@@ -402,6 +405,14 @@ fun SavedBoardThumbnailItem(
                 onLongClick = onLongClick
             )
     ) {
+        val displayBitmap = remember(entry.id, entry.screenshotPath, entry.bitmap) {
+            entry.bitmap ?: if (entry.screenshotPath.isNotEmpty() && File(entry.screenshotPath).exists()) {
+                BitmapFactory.decodeFile(entry.screenshotPath)
+            } else {
+                null
+            }
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -409,9 +420,9 @@ fun SavedBoardThumbnailItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(if (isCompactThumb) 12.dp else 16.dp)
         ) {
-            if (entry.bitmap != null) {
+            if (displayBitmap != null) {
                 Image(
-                    bitmap = entry.bitmap.asImageBitmap(),
+                    bitmap = displayBitmap.asImageBitmap(),
                     contentDescription = "Mini board screenshot",
                     modifier = Modifier
                         .size(thumbnailSize)

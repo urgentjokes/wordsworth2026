@@ -5,6 +5,7 @@ import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.runtime.Composable
 import com.example.wordsworth.ui.components.WordsWorthDialogs
 import com.example.wordsworth.ui.screens.SettingsScreen
@@ -21,6 +22,9 @@ import com.example.wordsworth.ui.theme.WordsWorthTheme
 class MainActivity : ComponentActivity() {
     /** Active hardware keyboard listener registered while [WordsWorthApp] is in composition. */
     var hardwareKeyHandler: ((KeyEvent) -> Boolean)? = null
+
+    /** ViewModel instance hosted at the Activity level to manage state persistence across process death. */
+    private val gameState: WordsWorthGameState by viewModels()
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (hardwareKeyHandler?.invoke(event) == true) {
@@ -47,14 +51,16 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             WordsWorthTheme {
-                WordsWorthApp()
+                WordsWorthApp(rememberWordsWorthGameState(gameState))
             }
         }
     }
 
     override fun onStop() {
         super.onStop()
-        // Safely update the dynamic launcher icon alias (Approach B) when the app is in the background
+        // 1. Auto-save active in-progress game session to survive unexpected process death
+        gameState.saveActiveSession()
+        // 2. Safely update the dynamic launcher icon alias (Approach B) when the app is in the background
         val currentLang = WordsWorthLogic.loadGameLanguage(this)
         WordsWorthLogic.updateLauncherIcon(this, currentLang)
     }
@@ -65,8 +71,7 @@ class MainActivity : ComponentActivity() {
  * [SettingsScreen], and [WordsWorthDialogs].
  */
 @Composable
-fun WordsWorthApp() {
-    val gameState = rememberWordsWorthGameState()
+fun WordsWorthApp(gameState: WordsWorthGameState = rememberWordsWorthGameState()) {
 
     if (gameState.showSettingsScreen) {
         SettingsScreen(

@@ -38,7 +38,32 @@ data class SavedGameEntry(
     val bitmap: Bitmap?,
     val board: Array<Array<Char?>>? = null,
     val validatedWords: List<FormedWord> = emptyList(),
-    val language: GameLanguage = GameLanguage.ENGLISH
+    val language: GameLanguage = GameLanguage.ENGLISH,
+    val sprinkledCells: Set<Pair<Int, Int>> = emptySet()
+)
+
+/**
+ * State snapshot for a single language session (English or Japanese) to survive process death.
+ */
+data class LanguageSessionState(
+    val board: Array<Array<Char?>>,
+    val sprinkledCells: Set<Pair<Int, Int>> = emptySet(),
+    val elapsedSeconds: Int = 0,
+    val validatedWords: List<FormedWord> = emptyList()
+)
+
+/**
+ * Full state snapshot of active boards and game options to restore uninterrupted play across process death.
+ */
+data class ActiveSessionState(
+    val activeLanguage: GameLanguage,
+    val boardSize: Int,
+    val isRandomPatternMode: Boolean,
+    val resumedGameId: Long?,
+    val timeAttackMinutes: Int?,
+    val isBoardLocked: Boolean,
+    val enSession: LanguageSessionState,
+    val jaSession: LanguageSessionState
 )
 
 /**
@@ -48,6 +73,7 @@ data class SavedGameEntry(
 object SavedGamesManager {
     private const val DIR_NAME = "saved_boards"
     private const val META_FILE = "saved_games.json"
+    private const val ACTIVE_SESSION_FILE = "active_session.json"
 
     /**
      * Serializes a 2D board array into a nested [JSONArray] of single-character strings
@@ -82,6 +108,38 @@ object SavedGamesManager {
     }
 
     /**
+     * Serializes sprinkled letter coordinates `(row, col)` into a [JSONArray].
+     */
+    private fun serializeSprinkledCells(cells: Set<Pair<Int, Int>>): JSONArray {
+        val arr = JSONArray()
+        for ((r, c) in cells) {
+            val obj = JSONObject().apply {
+                put("r", r)
+                put("c", c)
+            }
+            arr.put(obj)
+        }
+        return arr
+    }
+
+    /**
+     * Deserializes sprinkled letter coordinates from [JSONArray], returning empty set if absent.
+     */
+    private fun deserializeSprinkledCells(arr: JSONArray?): Set<Pair<Int, Int>> {
+        if (arr == null || arr.length() == 0) return emptySet()
+        val result = mutableSetOf<Pair<Int, Int>>()
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val r = obj.optInt("r", -1)
+            val c = obj.optInt("c", -1)
+            if (r >= 0 && c >= 0) {
+                result.add(r to c)
+            }
+        }
+        return result
+    }
+
+    /**
      * Serializes the list of valid [FormedWord]s so base words validated before an extension
      * can be restored when a saved game is resumed.
      */
@@ -94,6 +152,7 @@ object SavedGamesManager {
                 put("direction", fw.direction.name)
                 put("startRow", fw.startRow)
                 put("startCol", fw.startCol)
+                put("rawPoints", fw.rawPoints)
             }
             arr.put(obj)
         }
@@ -103,12 +162,13 @@ object SavedGamesManager {
     /**
      * Deserializes previously validated [FormedWord]s from a saved game's JSON metadata.
      */
-    private fun deserializeValidatedWords(arr: JSONArray?): List<FormedWord> {
+    private fun deserializeValidatedWords(arr: JSONArray?, language: GameLanguage = GameLanguage.ENGLISH): List<FormedWord> {
         if (arr == null || arr.length() == 0) return emptyList()
         val result = mutableListOf<FormedWord>()
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i) ?: continue
-            val word = obj.optString("word", "").uppercase()
+            val rawWord = obj.optString("word", "")
+            val word = if (language == GameLanguage.ENGLISH) rawWord.uppercase() else rawWord
             if (word.length < 2) continue
             val dirName = obj.optString("direction", WordDirection.HORIZONTAL.name)
             val direction = try {
@@ -124,6 +184,11 @@ object SavedGamesManager {
                     WordDirection.VERTICAL -> (startRow + idx) to startCol
                 }
             }
+            val savedPoints = if (obj.has("rawPoints")) {
+                obj.optInt("rawPoints", 0)
+            } else {
+                WordsWorthLogic.wordRawScore(word, language)
+            }
             result.add(
                 FormedWord(
                     word = word,
@@ -131,7 +196,7 @@ object SavedGamesManager {
                     startRow = startRow,
                     startCol = startCol,
                     cells = cells,
-                    rawPoints = WordsWorthLogic.wordRawScore(word),
+                    rawPoints = savedPoints,
                     isValid = true
                 )
             )
@@ -285,7 +350,8 @@ object SavedGamesManager {
         replaceId: Long? = null,
         language: GameLanguage? = null,
         japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
-        verbDictionary: Set<String> = emptySet()
+        verbDictionary: Set<String> = emptySet(),
+        sprinkledCells: Set<Pair<Int, Int>> = emptySet()
     ): SavedGameEntry {
         val dir = getStorageDir(context)
         val id = System.currentTimeMillis()
@@ -310,7 +376,8 @@ object SavedGamesManager {
             bitmap = bitmap,
             board = boardCopy,
             validatedWords = validWordsSnapshot,
-            language = gameLang
+            language = gameLang,
+            sprinkledCells = sprinkledCells
         )
 
         val currentArray = readMetadataArray(context)
@@ -323,6 +390,7 @@ object SavedGamesManager {
             put("board", serializeBoard(boardCopy))
             put("validatedWords", serializeValidatedWords(validWordsSnapshot))
             put("language", gameLang.name)
+            put("sprinkledCells", serializeSprinkledCells(sprinkledCells))
         }
 
         val updatedArray = JSONArray()
@@ -345,20 +413,20 @@ object SavedGamesManager {
 
     /**
      * Loads all saved game entries from `saved_games.json` in reverse-chronological order.
+     * Bitmaps are decoded lazily on demand when displayed to keep startup memory low.
      */
-    fun loadSavedGames(context: Context): List<SavedGameEntry> {
+    fun loadSavedGames(context: Context, decodeBitmaps: Boolean = false): List<SavedGameEntry> {
         val array = readMetadataArray(context)
         val result = mutableListOf<SavedGameEntry>()
         for (i in 0 until array.length()) {
             val obj = array.optJSONObject(i) ?: continue
             val path = obj.optString("screenshotPath", "")
-            val bmp = if (path.isNotEmpty() && File(path).exists()) {
+            val bmp = if (decodeBitmaps && path.isNotEmpty() && File(path).exists()) {
                 BitmapFactory.decodeFile(path)
             } else {
                 null
             }
             val savedBoard = deserializeBoard(obj.optJSONArray("board"))
-            val savedValidatedWords = deserializeValidatedWords(obj.optJSONArray("validatedWords"))
             val langStr = obj.optString("language", "")
             val entryLanguage = if (langStr.isNotEmpty()) {
                 try {
@@ -373,6 +441,8 @@ object SavedGamesManager {
                     GameLanguage.ENGLISH
                 }
             }
+            val savedValidatedWords = deserializeValidatedWords(obj.optJSONArray("validatedWords"), entryLanguage)
+            val sprinkled = deserializeSprinkledCells(obj.optJSONArray("sprinkledCells"))
             result.add(
                 SavedGameEntry(
                     id = obj.optLong("id", 0L),
@@ -383,7 +453,8 @@ object SavedGamesManager {
                     bitmap = bmp,
                     board = savedBoard,
                     validatedWords = savedValidatedWords,
-                    language = entryLanguage
+                    language = entryLanguage,
+                    sprinkledCells = sprinkled
                 )
             )
         }
@@ -413,6 +484,103 @@ object SavedGamesManager {
     fun clearAllSavedGames(context: Context) {
         val dir = getStorageDir(context)
         dir.listFiles()?.forEach { it.delete() }
+    }
+
+    /**
+     * Persists active board states, sprinkled cells, and timer progression to disk so games
+     * can be seamlessly resumed without progress loss if the OS terminates the process in the background.
+     */
+    fun saveActiveSession(context: Context, session: ActiveSessionState) {
+        try {
+            val root = JSONObject().apply {
+                put("activeLanguage", session.activeLanguage.name)
+                put("boardSize", session.boardSize)
+                put("isRandomPatternMode", session.isRandomPatternMode)
+                put("resumedGameId", session.resumedGameId ?: JSONObject.NULL)
+                put("timeAttackMinutes", session.timeAttackMinutes ?: JSONObject.NULL)
+                put("isBoardLocked", session.isBoardLocked)
+
+                val enObj = JSONObject().apply {
+                    put("board", serializeBoard(session.enSession.board))
+                    put("sprinkledCells", serializeSprinkledCells(session.enSession.sprinkledCells))
+                    put("elapsedSeconds", session.enSession.elapsedSeconds)
+                    put("validatedWords", serializeValidatedWords(session.enSession.validatedWords))
+                }
+                put("en", enObj)
+
+                val jaObj = JSONObject().apply {
+                    put("board", serializeBoard(session.jaSession.board))
+                    put("sprinkledCells", serializeSprinkledCells(session.jaSession.sprinkledCells))
+                    put("elapsedSeconds", session.jaSession.elapsedSeconds)
+                    put("validatedWords", serializeValidatedWords(session.jaSession.validatedWords))
+                }
+                put("ja", jaObj)
+            }
+            val file = File(context.filesDir, ACTIVE_SESSION_FILE)
+            file.writeText(root.toString())
+        } catch (_: Exception) {
+            // Silently ignore disk write issues on background transitions
+        }
+    }
+
+    /**
+     * Restores active board session state previously serialized during [saveActiveSession],
+     * or returns `null` if no active session file is present or it fails to parse.
+     */
+    fun loadActiveSession(context: Context): ActiveSessionState? {
+        val file = File(context.filesDir, ACTIVE_SESSION_FILE)
+        if (!file.exists()) return null
+        return try {
+            val root = JSONObject(file.readText())
+            val activeLang = try {
+                GameLanguage.valueOf(root.optString("activeLanguage", "ENGLISH"))
+            } catch (_: Exception) {
+                GameLanguage.ENGLISH
+            }
+            val boardSize = root.optInt("boardSize", WordsWorthLogic.BOARD_SIZE)
+            val isRandomPattern = root.optBoolean("isRandomPatternMode", false)
+            val resumedGameId = if (root.isNull("resumedGameId")) null else root.optLong("resumedGameId")
+            val timeAttackMinutes = if (root.isNull("timeAttackMinutes")) null else root.optInt("timeAttackMinutes")
+            val isBoardLocked = root.optBoolean("isBoardLocked", false)
+
+            val enObj = root.optJSONObject("en")
+            val enBoard = deserializeBoard(enObj?.optJSONArray("board")) ?: WordsWorthLogic.createBlankBoard(boardSize)
+            val enSprinkled = deserializeSprinkledCells(enObj?.optJSONArray("sprinkledCells"))
+            val enElapsed = enObj?.optInt("elapsedSeconds", 0) ?: 0
+            val enValidated = deserializeValidatedWords(enObj?.optJSONArray("validatedWords"))
+
+            val jaObj = root.optJSONObject("ja")
+            val jaBoard = deserializeBoard(jaObj?.optJSONArray("board")) ?: WordsWorthLogic.createBlankBoard(boardSize)
+            val jaSprinkled = deserializeSprinkledCells(jaObj?.optJSONArray("sprinkledCells"))
+            val jaElapsed = jaObj?.optInt("elapsedSeconds", 0) ?: 0
+            val jaValidated = deserializeValidatedWords(jaObj?.optJSONArray("validatedWords"))
+
+            ActiveSessionState(
+                activeLanguage = activeLang,
+                boardSize = boardSize,
+                isRandomPatternMode = isRandomPattern,
+                resumedGameId = resumedGameId,
+                timeAttackMinutes = timeAttackMinutes,
+                isBoardLocked = isBoardLocked,
+                enSession = LanguageSessionState(enBoard, enSprinkled, enElapsed, enValidated),
+                jaSession = LanguageSessionState(jaBoard, jaSprinkled, jaElapsed, jaValidated)
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Clears any active game session file (e.g. when the player resets the board or completes the round).
+     */
+    fun clearActiveSession(context: Context) {
+        try {
+            val file = File(context.filesDir, ACTIVE_SESSION_FILE)
+            if (file.exists()) {
+                file.delete()
+            }
+        } catch (_: Exception) {
+        }
     }
 
     private fun readMetadataArray(context: Context): JSONArray {

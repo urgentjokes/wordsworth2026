@@ -19,6 +19,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -53,24 +54,56 @@ class WordsWorthGameState(
 
     private fun loadInitialData() {
         viewModelScope.launch {
-            val loadedDictEn = withContext(Dispatchers.IO) {
-                WordsWorthLogic.loadDictionary(context, GameLanguage.ENGLISH)
-            }
-            val loadedDictJa = withContext(Dispatchers.IO) {
-                WordsWorthLogic.loadDictionary(context, GameLanguage.JAPANESE)
-            }
-            val loadedVerbs = withContext(Dispatchers.IO) {
-                WordsWorthLogic.loadJapaneseVerbDictionary(context)
-            }
-            val loadedGames = withContext(Dispatchers.IO) {
-                SavedGamesManager.loadSavedGames(context)
-            }
-            englishDictionary = loadedDictEn
-            japaneseDictionary = loadedDictJa
-            japaneseVerbDictionary = loadedVerbs
+            val dictEnDeferred = async(Dispatchers.IO) { WordsWorthLogic.loadDictionary(context, GameLanguage.ENGLISH) }
+            val dictJaDeferred = async(Dispatchers.IO) { WordsWorthLogic.loadDictionary(context, GameLanguage.JAPANESE) }
+            val verbsDeferred = async(Dispatchers.IO) { WordsWorthLogic.loadJapaneseVerbDictionary(context) }
+            val gamesDeferred = async(Dispatchers.IO) { SavedGamesManager.loadSavedGames(context) }
+            val activeSessionDeferred = async(Dispatchers.IO) { SavedGamesManager.loadActiveSession(context) }
+
+            englishDictionary = dictEnDeferred.await()
+            japaneseDictionary = dictJaDeferred.await()
+            japaneseVerbDictionary = verbsDeferred.await()
+            val loadedGames = gamesDeferred.await()
             savedGames.clear()
             savedGames.addAll(loadedGames)
             isDictionaryLoaded = true
+
+            val activeSession = activeSessionDeferred.await()
+            if (activeSession != null) {
+                boardEn = activeSession.enSession.board
+                sprinkledCellsEn = activeSession.enSession.sprinkledCells
+                elapsedSecondsEn = activeSession.enSession.elapsedSeconds
+                validatedWordsHistoryEn.clear()
+                validatedWordsHistoryEn.addAll(activeSession.enSession.validatedWords)
+
+                boardJa = activeSession.jaSession.board
+                sprinkledCellsJa = activeSession.jaSession.sprinkledCells
+                elapsedSecondsJa = activeSession.jaSession.elapsedSeconds
+                validatedWordsHistoryJa.clear()
+                validatedWordsHistoryJa.addAll(activeSession.jaSession.validatedWords)
+
+                boardSize = activeSession.boardSize
+                isRandomPatternMode = activeSession.isRandomPatternMode
+                resumedGameId = activeSession.resumedGameId
+                timeAttackMinutes = activeSession.timeAttackMinutes
+                isBoardLocked = activeSession.isBoardLocked
+                gameLanguage = activeSession.activeLanguage
+
+                val targetBoard = if (gameLanguage == GameLanguage.ENGLISH) boardEn else boardJa
+                val targetSprinkled = if (gameLanguage == GameLanguage.ENGLISH) sprinkledCellsEn else sprinkledCellsJa
+                val targetElapsed = if (gameLanguage == GameLanguage.ENGLISH) elapsedSecondsEn else elapsedSecondsJa
+
+                board = copyBoard(targetBoard)
+                sprinkledCells = targetSprinkled
+                elapsedSeconds = targetElapsed
+                validatedWordsHistory.clear()
+                validatedWordsHistory.addAll(if (gameLanguage == GameLanguage.ENGLISH) validatedWordsHistoryEn else validatedWordsHistoryJa)
+
+                if (targetElapsed > 0 && !isBoardLocked) {
+                    isTimerRunning = true
+                }
+            }
+
             tallyResult = evaluateBoard()
         }
     }
@@ -164,7 +197,7 @@ class WordsWorthGameState(
 
     /** Coordinates `(row, col)` of squares currently populated with non-deletable sprinkled letters. */
     var sprinkledCells by mutableStateOf<Set<Pair<Int, Int>>>(
-        if (WordsWorthLogic.loadGameLanguage(context) == GameLanguage.ENGLISH) sprinkledCellsEn else sprinkledCellsJa
+        if (gameLanguage == GameLanguage.ENGLISH) sprinkledCellsEn else sprinkledCellsJa
     )
 
     /** Returns `true` if the square at ([row], [col]) contains a non-deletable sprinkled letter. */
@@ -172,7 +205,7 @@ class WordsWorthGameState(
 
     /** Current 2D crossword board matrix (`null` = empty, `'#'` = blocked, letter/kana = placed). */
     var board by mutableStateOf(
-        if (WordsWorthLogic.loadGameLanguage(context) == GameLanguage.ENGLISH) boardEn else boardJa
+        if (gameLanguage == GameLanguage.ENGLISH) boardEn else boardJa
     )
 
     /**
@@ -392,6 +425,7 @@ class WordsWorthGameState(
         elapsedSeconds = 0
         pendingRomaji = ""
         lastPlacedCell = null
+        clearActiveSession()
     }
 
     /** Generates a new random-pattern board of the current [boardSize] with blacked-out squares. */
@@ -412,6 +446,7 @@ class WordsWorthGameState(
         elapsedSeconds = 0
         pendingRomaji = ""
         lastPlacedCell = null
+        clearActiveSession()
     }
 
     /** Handles tapping the "All-blank" pattern button. */
@@ -455,6 +490,7 @@ class WordsWorthGameState(
         elapsedSeconds = 0
         pendingRomaji = ""
         lastPlacedCell = null
+        clearActiveSession()
     }
 
     /**
@@ -960,13 +996,27 @@ class WordsWorthGameState(
             boardSize = size
             isRandomPatternMode = restoredBoard.any { row -> row.any { WordsWorthLogic.isBlockedCell(it) } }
             board = restoredBoard
-            sprinkledCells = emptySet()
+            sprinkledCells = entry.sprinkledCells
 
             // Restore language from saved entry
             val entryLang = entry.language
             if (entryLang != gameLanguage) {
                 gameLanguage = entryLang
                 WordsWorthLogic.saveGameLanguage(context, entryLang)
+            }
+
+            if (entryLang == GameLanguage.ENGLISH) {
+                boardEn = copyBoard(restoredBoard)
+                sprinkledCellsEn = entry.sprinkledCells
+                elapsedSecondsEn = entry.elapsedSeconds
+                validatedWordsHistoryEn.clear()
+                validatedWordsHistoryEn.addAll(entry.validatedWords)
+            } else {
+                boardJa = copyBoard(restoredBoard)
+                sprinkledCellsJa = entry.sprinkledCells
+                elapsedSecondsJa = entry.elapsedSeconds
+                validatedWordsHistoryJa.clear()
+                validatedWordsHistoryJa.addAll(entry.validatedWords)
             }
 
             focusedCell = firstEmptyOrAvailableCell(restoredBoard)
@@ -1022,6 +1072,7 @@ class WordsWorthGameState(
         elapsedSeconds = 0
         pendingRomaji = ""
         lastPlacedCell = null
+        clearActiveSession()
     }
 
     /** Updates the user's [KeyboardLayout] preference and saves it to SharedPreferences. */
@@ -1123,7 +1174,8 @@ class WordsWorthGameState(
                 replaceId = resumedGameId,
                 language = gameLanguage,
                 japaneseVerbRule = japaneseVerbRule,
-                verbDictionary = japaneseVerbDictionary
+                verbDictionary = japaneseVerbDictionary,
+                sprinkledCells = sprinkledCells
             )
             withContext(Dispatchers.Main) {
                 resumedGameId?.let { id ->
@@ -1181,6 +1233,70 @@ class WordsWorthGameState(
         }
         return result
     }
+
+    /**
+     * Persists the current in-progress board state, sprinkled letters, and elapsed timer
+     * to disk so they survive unexpected process death while the app is in the background.
+     */
+    fun saveActiveSession() {
+        // Sync active board state to language slot
+        if (gameLanguage == GameLanguage.ENGLISH) {
+            boardEn = copyBoard(board)
+            sprinkledCellsEn = sprinkledCells
+            elapsedSecondsEn = elapsedSeconds
+            validatedWordsHistoryEn.clear()
+            validatedWordsHistoryEn.addAll(validatedWordsHistory)
+        } else {
+            boardJa = copyBoard(board)
+            sprinkledCellsJa = sprinkledCells
+            elapsedSecondsJa = elapsedSeconds
+            validatedWordsHistoryJa.clear()
+            validatedWordsHistoryJa.addAll(validatedWordsHistory)
+        }
+
+        // Determine if there is any user progress worth saving
+        val hasEnLetters = boardEn.indices.any { r ->
+            boardEn[r].indices.any { c -> WordsWorthLogic.isLetterCell(boardEn[r][c]) && (r to c) !in sprinkledCellsEn }
+        }
+        val hasJaLetters = boardJa.indices.any { r ->
+            boardJa[r].indices.any { c -> WordsWorthLogic.isLetterCell(boardJa[r][c]) && (r to c) !in sprinkledCellsJa }
+        }
+        val hasActiveProgress = hasEnLetters || hasJaLetters || elapsedSecondsEn > 0 || elapsedSecondsJa > 0
+
+        if (!hasActiveProgress) {
+            SavedGamesManager.clearActiveSession(context)
+            return
+        }
+
+        val sessionState = ActiveSessionState(
+            activeLanguage = gameLanguage,
+            boardSize = boardSize,
+            isRandomPatternMode = isRandomPatternMode,
+            resumedGameId = resumedGameId,
+            timeAttackMinutes = timeAttackMinutes,
+            isBoardLocked = isBoardLocked,
+            enSession = LanguageSessionState(
+                board = boardEn,
+                sprinkledCells = sprinkledCellsEn,
+                elapsedSeconds = elapsedSecondsEn,
+                validatedWords = validatedWordsHistoryEn.toList()
+            ),
+            jaSession = LanguageSessionState(
+                board = boardJa,
+                sprinkledCells = sprinkledCellsJa,
+                elapsedSeconds = elapsedSecondsJa,
+                validatedWords = validatedWordsHistoryJa.toList()
+            )
+        )
+        SavedGamesManager.saveActiveSession(context, sessionState)
+    }
+
+    /**
+     * Removes any persisted active session snapshot when the round is finished or reset.
+     */
+    fun clearActiveSession() {
+        SavedGamesManager.clearActiveSession(context)
+    }
 }
 
 /**
@@ -1188,8 +1304,7 @@ class WordsWorthGameState(
  * hardware keyboard event dispatch with [MainActivity].
  */
 @Composable
-fun rememberWordsWorthGameState(): WordsWorthGameState {
-    val state: WordsWorthGameState = viewModel()
+fun rememberWordsWorthGameState(state: WordsWorthGameState = viewModel()): WordsWorthGameState {
     val context = LocalContext.current
 
     // Register hardware/Bluetooth keyboard handler with the hosting MainActivity
