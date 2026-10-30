@@ -51,6 +51,13 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onStop() {
+        super.onStop()
+        // Safely update the dynamic launcher icon alias (Approach B) when the app is in the background
+        val currentLang = WordsWorthLogic.loadGameLanguage(this)
+        WordsWorthLogic.updateLauncherIcon(this, currentLang)
+    }
 }
 
 /**

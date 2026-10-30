@@ -290,18 +290,21 @@ object WordsWorthLogic {
         }
     }
 
-    /** Persists the user's selected [GameLanguage] to SharedPreferences and updates the launcher icon. */
+    /** Persists the user's selected [GameLanguage] to SharedPreferences. */
     fun saveGameLanguage(context: Context, lang: GameLanguage) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_GAME_LANGUAGE, lang.name)
             .apply()
-        updateLauncherIcon(context, lang)
     }
 
     /**
      * Updates the active launcher icon alias (Approach B) to match the selected [GameLanguage].
      * Enables [MainActivityAliasEn] for English or [MainActivityAliasJa] for Japanese.
+     *
+     * Note: This must only be invoked when the app is in the background (e.g. [MainActivity.onStop]),
+     * as modifying or disabling the currently active launcher activity component while running in
+     * the foreground triggers the Android system / launcher to terminate the active task.
      */
     fun updateLauncherIcon(context: Context, lang: GameLanguage) {
         try {
@@ -309,22 +312,26 @@ object WordsWorthLogic {
             val enAlias = ComponentName(context, "com.example.wordsworth.MainActivityAliasEn")
             val jaAlias = ComponentName(context, "com.example.wordsworth.MainActivityAliasJa")
 
-            val enState = if (lang == GameLanguage.ENGLISH) {
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            val (enableAlias, disableAlias) = if (lang == GameLanguage.ENGLISH) {
+                enAlias to jaAlias
             } else {
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-            }
-            val jaState = if (lang == GameLanguage.JAPANESE) {
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-            } else {
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                jaAlias to enAlias
             }
 
-            if (pm.getComponentEnabledSetting(enAlias) != enState) {
-                pm.setComponentEnabledSetting(enAlias, enState, PackageManager.DONT_KILL_APP)
+            // Always enable the target alias first before disabling the inactive alias
+            if (pm.getComponentEnabledSetting(enableAlias) != PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+                pm.setComponentEnabledSetting(
+                    enableAlias,
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    PackageManager.DONT_KILL_APP
+                )
             }
-            if (pm.getComponentEnabledSetting(jaAlias) != jaState) {
-                pm.setComponentEnabledSetting(jaAlias, jaState, PackageManager.DONT_KILL_APP)
+            if (pm.getComponentEnabledSetting(disableAlias) != PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
+                pm.setComponentEnabledSetting(
+                    disableAlias,
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP
+                )
             }
         } catch (_: Exception) {
             // Defensive guard for non-standard environments/unit tests

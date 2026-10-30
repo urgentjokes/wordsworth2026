@@ -1,27 +1,38 @@
-# WordsWorth
+# WordsWorth / ますます
 
 An Android crossword-style word puzzle game built with Jetpack Compose. Players populate a crossword grid with intersecting horizontal (Across) and vertical (Down) words to maximize their score.
 
-WordsWorth supports both **English** and **Japanese (WordsWorth-J)** editions with instant switching, independent board state preservation, multiple grid sizes, custom board patterns, Time Attack challenges, and flexible scoring rules.
+WordsWorth supports both **English** (**WordsWorth**) and **Japanese** (**ますます**) editions with instant switching, dynamic launcher icons and app titles, independent board state preservation, multiple grid sizes, custom board patterns, letter sprinkle bonuses, Time Attack challenges, and flexible scoring rules.
 
 ---
 
 ## Features & Highlights
 
-### 🌐 Bilingual Support (English & Japanese)
+### 🌐 Bilingual Support & Dynamic Launcher Branding
 - **Top Bar Switcher**: Tap the top header badge (`En` for English, `日` for Japanese) to switch instantly between language editions.
+- **Dynamic Launcher Icon & App Title**:
+  - **English Edition**: Displays the **WORD** wooden tile icon and the title **WordsWorth**.
+  - **Japanese Edition**: Displays the **ます** wooden tile icon and the title **ますます**.
+  - *Development*: Seamless in-app icon and title toggling via Android `<activity-alias>` (`MainActivityAliasEn` and `MainActivityAliasJa`).
+  - *Production*: Transitioning to system locale qualifiers (`res/mipmap-ja-...` and `res/values-ja/`) and localized Google Play Store listings for shipping.
 - **Independent Session Preservation**: Switching languages preserves each language's active board, timer, cursor position, and word validation history without data loss.
 - **English Mode**:
   - Full Latin alphabet (`A`–`Z`) with infinite tiles.
   - Standard Scrabble letter point distributions (1 to 10 points per letter).
   - 152,000+ English word dictionary (`words.txt`).
-- **Japanese Mode (WordsWorth-J)**:
+- **Japanese Mode (ますます)**:
   - Hiragana syllabary with Romaji-to-Hiragana input streaming.
   - 164,000+ Japanese word dictionary (`words_ja.txt`).
   - **Kana Point Values**: Point system tailored to Japanese frequency (from 0 to 10 points).
   - **Caboose Rule**: Terminal `-う` column vowels (う, く, す, つ, ぬ, ふ, む, ゆ, る) and terminal `て`/`で` score only **1 point** when appearing at the end of a word, but score their full point values when appearing elsewhere.
   - **Sokuon & Small Kana**: `ゃ`, `ゅ`, `ょ`, `っ`, and the prolonged sound mark `ー` score **0 points** (serving as structural bridge tiles).
   - **Dedicated `ー` Key**: Prolonged sound mark key on row 2, with automatic Romaji-to-Hiragana composition.
+
+### 🌟 Letter Sprinkle Feature (Bonus Tiles)
+- Configure pre-placed seed letters on new and cleared boards: **None**, **Some** (3–6 tiles), or **Lots** (8–14 tiles).
+- **Double Points**: Words utilizing sprinkled letters award **2× double points** for each sprinkled tile used.
+- **Visual Indicator**: Sprinkled tiles display a superscripted asterisk (e.g. **W\***, **ま\***) anchored to the upper-right shoulder while keeping the base letter perfectly centered.
+- **Locked Tiles**: Sprinkled tiles cannot be cleared or overwritten mid-game.
 
 ### 📐 Multiple Board Sizes & Patterns
 - **Grid Sizes**: Choose between **6×6**, **9×9**, and **12×12** boards.
@@ -35,20 +46,25 @@ WordsWorth supports both **English** and **Japanese (WordsWorth-J)** editions wi
   - Real-time countdown timer turns warning red when $\le$ 10 seconds remain.
   - Board automatically locks when time expires, tallying final score.
 
-### 🎯 Scoring Rules & Settings
-Accessible via the Settings gear icon in the top header:
-- **Extended Word Scoring**:
-  - *Difference Only*: Extending an existing word (e.g. extending "PLAY" to "PLAYER") only awards points for the newly added letters ("ER").
-  - *Cumulative Points*: Awards the full point value for the entire newly formed word.
-- **Duplicate Word Points**: Toggle whether placing the same valid word more than once awards points each time or only once per board.
-- **Keyboard Layout**: Switch between **Alphabetical** and **QWERTY** on-screen keyboard layouts.
-- **Word Whitelist**: Long-press any invalid word in the word list to add it to a persistent custom whitelist.
+### 🎯 Settings & Customization
+Organized into dedicated settings categories:
+- **Game & Rules**:
+  - *Japanese Verb Rules*: Toggle between Standard and Caboose scoring modes.
+  - *Time Attack Duration*: Quick adjustments for timed play.
+- **Scoring**:
+  - *Duplicate Word Points*: Toggle whether placing the same valid word more than once awards points each time or only once per board.
+  - *Word Whitelist*: Long-press any unrecognized word in the validation list to add it to a persistent custom whitelist.
+- **Board & Tiles**:
+  - *Keyboard Layout*: Switch between **Alphabetical** and **QWERTY** on-screen keyboard racks.
+  - *Letter Sprinkle Mode*: Set starting seed tile density (**None**, **Some**, **Lots**).
+  - *Haptic Feedback*: Toggle subtle tactile vibration on tile placement, deletion, and validation.
+- **Data & History**:
+  - Clear board, load example puzzle boards, and clear saved game history.
 
 ### 🎮 Responsive Touch & Keyboard Controls
 - **Tap to Focus / Toggle Direction**: Tap an empty square to focus; tap the focused square to toggle typing direction (Across $\leftrightarrow$ Down).
 - **Long-Press to Clear**: Long-press any placed tile on the board to clear it.
 - **Drag-and-Drop Tile Placement**: Drag a letter tile from the keyboard rack directly onto any board cell with a floating preview tile.
-- **Smooth Swipe Scrolling**: Swipe up or down anywhere on the board, keyboard, or cards to scroll the screen smoothly.
 - **Hardware & Bluetooth Keyboard**: Full physical keyboard support (letters, arrow keys, Backspace, Space to toggle direction, Enter to validate).
 
 ### 💾 Saved Games & History
@@ -71,7 +87,7 @@ Accessible via the Settings gear icon in the top header:
 | **8 pts** | J, X |
 | **10 pts** | Q, Z |
 
-### Japanese Kana Values (WordsWorth-J)
+### Japanese Kana Values (ますます)
 | Points | Kana Characters |
 | :--- | :--- |
 | **0 pts** | ゃ, ゅ, ょ, っ, ー *(Structural Bridge Tiles)* |
@@ -94,23 +110,21 @@ Accessible via the Settings gear icon in the top header:
 
 ```
 app/src/main/java/com/example/wordsworth/
-├── MainActivity.kt               # Main entry point & hardware keyboard dispatch
-├── WordsWorthGameState.kt        # AndroidViewModel holding dual-language board & game state
-├── WordsWorthLogic.kt            # Core engine: scoring, dictionary, Caboose rule, board tallying
+├── MainActivity.kt               # Main entry point, hardware keyboard dispatch & alias targets
+├── WordsWorthGameState.kt        # ViewModel managing dual-language board, timers, sprinkles & settings
+├── WordsWorthLogic.kt            # Core engine: scoring, dictionary lookup, Caboose rule & launcher icon updates
 ├── KanaConverter.kt              # Romaji-to-Hiragana converter & kana scoring tables
 ├── SavedGamesManager.kt          # Disk persistence & screenshot generator for saved games
 └── ui/
     ├── screens/
     │   ├── WordsWorthGameScreen.kt   # Adaptive layouts (Phone/Tablet, Portrait/Landscape)
-    │   └── SettingsScreen.kt          # Settings: keyboard, scoring mode, duplicates, whitelist
+    │   └── SettingsScreen.kt          # Categorized settings: Game, Scoring, Board & Tiles, Data
     ├── components/
-    │   ├── BoardComponents.kt        # CrosswordBoardGrid, BoardCell, TileKeyboardRack
+    │   ├── BoardComponents.kt        # CrosswordBoardGrid, BoardCell, sprinkled tiles, TileKeyboardRack
     │   ├── SidebarComponents.kt      # Score cards, timers, word lists, saved game thumbnails
     │   └── GameDialogs.kt            # Time Attack, whitelist, quit, preview, and delete dialogs
     └── theme/
-        ├── Color.kt                  # Curated palette & board color tokens
-        ├── Theme.kt                  # Material3 theme setup
-        └── Type.kt                   # Typography definitions
+        └── Theme.kt                  # Material3 theme setup, color tokens & typography
 ```
 
 ---
@@ -123,7 +137,7 @@ app/src/main/java/com/example/wordsworth/
 
 ### Run Unit Tests
 ```bash
-./gradlew testDebugUnitTest
+./gradlew test
 ```
 
 ### Build Debug APK
