@@ -57,6 +57,55 @@ class WordsWorthLogicTest {
     }
 
     @Test
+    fun testJapaneseSavedGame99Score() {
+        val board: Array<Array<Char?>> = arrayOf(
+            arrayOf(null, null, null, 'こ', 'ろ', 'し'),
+            arrayOf(null, null, null, null, null, 'た'),
+            arrayOf('け', null, 'ひ', 'ろ', 'し', 'ま'),
+            arrayOf('い', null, 'や', 'こ', null, 'ち'),
+            arrayOf('れ', 'ん', 'け', 'つ', null, null),
+            arrayOf('つ', null, null, null, null, null)
+        )
+        val dict = java.io.File("src/main/assets/words_ja.txt").readLines().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        val verbs = java.io.File("src/main/assets/all_japanese_verbs_hiragana.txt").readLines().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+
+        val previouslyValidated = listOf(
+            FormedWord("ろし", WordDirection.HORIZONTAL, 0, 4, listOf(0 to 4, 0 to 5), 3, true),
+            FormedWord("ころし", WordDirection.HORIZONTAL, 0, 3, listOf(0 to 3, 0 to 4, 0 to 5), 4, true),
+            FormedWord("しま", WordDirection.HORIZONTAL, 2, 4, listOf(2 to 4, 2 to 5), 2, true),
+            FormedWord("ひろしま", WordDirection.HORIZONTAL, 2, 2, listOf(2 to 2, 2 to 3, 2 to 4, 2 to 5), 6, true),
+            FormedWord("やこ", WordDirection.HORIZONTAL, 3, 2, listOf(3 to 2, 3 to 3), 4, true),
+            FormedWord("れんけつ", WordDirection.HORIZONTAL, 4, 0, listOf(4 to 0, 4 to 1, 4 to 2, 4 to 3), 17, true),
+            FormedWord("けいれつ", WordDirection.VERTICAL, 2, 0, listOf(2 to 0, 3 to 0, 4 to 0, 5 to 0), 17, true),
+            FormedWord("ひやけ", WordDirection.VERTICAL, 2, 2, listOf(2 to 2, 3 to 2, 4 to 2), 12, true),
+            FormedWord("した", WordDirection.VERTICAL, 0, 5, listOf(0 to 5, 1 to 5), 3, true),
+            FormedWord("したまち", WordDirection.VERTICAL, 0, 5, listOf(0 to 5, 1 to 5, 2 to 5, 3 to 5), 25, true)
+        )
+        val tallyDiffOnly = WordsWorthLogic.tallyBoard(
+            board = board,
+            dictionary = dict,
+            scoringMode = ScoringMode.EXTENDED_DIFF_ONLY,
+            previouslyValidatedWords = previouslyValidated,
+            language = GameLanguage.JAPANESE,
+            japaneseVerbRule = JapaneseVerbRule.CABOOSE,
+            verbDictionary = verbs
+        )
+        val tallyCumulative = WordsWorthLogic.tallyBoard(
+            board = board,
+            dictionary = dict,
+            scoringMode = ScoringMode.CUMULATIVE_EXTENDED,
+            previouslyValidatedWords = previouslyValidated,
+            language = GameLanguage.JAPANESE,
+            japaneseVerbRule = JapaneseVerbRule.CABOOSE,
+            verbDictionary = verbs
+        )
+        // In EXTENDED_DIFF_ONLY, extended base words (ろし, しま, した) are excluded from the score -> 80
+        assertEquals(80, tallyDiffOnly.totalScore)
+        // In CUMULATIVE_EXTENDED, extended base words are retained -> 94
+        assertEquals(94, tallyCumulative.totalScore)
+    }
+
+    @Test
     fun testSprinkleLettersJapanese() {
         val board = WordsWorthLogic.createBlankBoard(6)
         val sprinkled = WordsWorthLogic.sprinkleLetters(board, LetterSprinkleMode.SOME, GameLanguage.JAPANESE, Random(123))

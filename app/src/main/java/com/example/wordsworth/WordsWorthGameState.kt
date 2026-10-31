@@ -1005,6 +1005,10 @@ class WordsWorthGameState(
                 WordsWorthLogic.saveGameLanguage(context, entryLang)
             }
 
+            // Restore scoring mode & verb rule from saved entry so tallying matches the game's rules
+            scoringMode = entry.scoringMode
+            japaneseVerbRule = entry.japaneseVerbRule
+
             if (entryLang == GameLanguage.ENGLISH) {
                 boardEn = copyBoard(restoredBoard)
                 sprinkledCellsEn = entry.sprinkledCells
@@ -1024,7 +1028,34 @@ class WordsWorthGameState(
             elapsedSeconds = entry.elapsedSeconds
             isTimerRunning = true
             if (isDictionaryLoaded) {
-                tallyResult = evaluateBoard(restoredBoard)
+                val evaluated = evaluateBoard(
+                    evalBoard = restoredBoard,
+                    mode = entry.scoringMode,
+                    verbRule = entry.japaneseVerbRule
+                )
+                tallyResult = if (entry.score > evaluated.totalScore && entry.validatedWords.isNotEmpty()) {
+                    // For legacy games where sprinkledCells or rawPoints were not serialized to JSON,
+                    // retain the authentic recorded score and validated words list from the saved entry
+                    evaluated.copy(
+                        totalScore = entry.score,
+                        words = entry.validatedWords
+                    )
+                } else {
+                    evaluated
+                }
+            } else {
+                val cellMap = mutableMapOf<Pair<Int, Int>, CellValidation>()
+                for (word in entry.validatedWords) {
+                    for (cell in word.cells) {
+                        cellMap[cell] = CellValidation.VALID
+                    }
+                }
+                tallyResult = TallyResult(
+                    totalScore = entry.score,
+                    words = entry.validatedWords,
+                    isolatedCells = emptyList(),
+                    cellValidations = cellMap
+                )
             }
         } else {
             previewSavedEntry = entry
@@ -1175,7 +1206,8 @@ class WordsWorthGameState(
                 language = gameLanguage,
                 japaneseVerbRule = japaneseVerbRule,
                 verbDictionary = japaneseVerbDictionary,
-                sprinkledCells = sprinkledCells
+                sprinkledCells = sprinkledCells,
+                scoringMode = scoringMode
             )
             withContext(Dispatchers.Main) {
                 resumedGameId?.let { id ->

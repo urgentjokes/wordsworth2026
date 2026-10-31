@@ -39,7 +39,9 @@ data class SavedGameEntry(
     val board: Array<Array<Char?>>? = null,
     val validatedWords: List<FormedWord> = emptyList(),
     val language: GameLanguage = GameLanguage.ENGLISH,
-    val sprinkledCells: Set<Pair<Int, Int>> = emptySet()
+    val sprinkledCells: Set<Pair<Int, Int>> = emptySet(),
+    val scoringMode: ScoringMode = ScoringMode.EXTENDED_DIFF_ONLY,
+    val japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE
 )
 
 /**
@@ -351,7 +353,8 @@ object SavedGamesManager {
         language: GameLanguage? = null,
         japaneseVerbRule: JapaneseVerbRule = JapaneseVerbRule.CABOOSE,
         verbDictionary: Set<String> = emptySet(),
-        sprinkledCells: Set<Pair<Int, Int>> = emptySet()
+        sprinkledCells: Set<Pair<Int, Int>> = emptySet(),
+        scoringMode: ScoringMode = ScoringMode.EXTENDED_DIFF_ONLY
     ): SavedGameEntry {
         val dir = getStorageDir(context)
         val id = System.currentTimeMillis()
@@ -377,7 +380,9 @@ object SavedGamesManager {
             board = boardCopy,
             validatedWords = validWordsSnapshot,
             language = gameLang,
-            sprinkledCells = sprinkledCells
+            sprinkledCells = sprinkledCells,
+            scoringMode = scoringMode,
+            japaneseVerbRule = japaneseVerbRule
         )
 
         val currentArray = readMetadataArray(context)
@@ -391,6 +396,8 @@ object SavedGamesManager {
             put("validatedWords", serializeValidatedWords(validWordsSnapshot))
             put("language", gameLang.name)
             put("sprinkledCells", serializeSprinkledCells(sprinkledCells))
+            put("scoringMode", scoringMode.name)
+            put("japaneseVerbRule", japaneseVerbRule.name)
         }
 
         val updatedArray = JSONArray()
@@ -443,6 +450,36 @@ object SavedGamesManager {
             }
             val savedValidatedWords = deserializeValidatedWords(obj.optJSONArray("validatedWords"), entryLanguage)
             val sprinkled = deserializeSprinkledCells(obj.optJSONArray("sprinkledCells"))
+
+            val scoringModeStr = obj.optString("scoringMode", "")
+            val entryScoringMode = if (scoringModeStr.isNotEmpty()) {
+                try {
+                    ScoringMode.valueOf(scoringModeStr)
+                } catch (_: Exception) {
+                    ScoringMode.EXTENDED_DIFF_ONLY
+                }
+            } else {
+                // Heuristic for legacy games: if saved words contain any word that is a strict sub-slice
+                // of another word in the same direction, the game was played under CUMULATIVE_EXTENDED
+                val hasSubWords = savedValidatedWords.any { sub ->
+                    savedValidatedWords.any { sup ->
+                        sup != sub && sup.direction == sub.direction && sup.cells.size > sub.cells.size && sup.cells.containsAll(sub.cells)
+                    }
+                }
+                if (hasSubWords) ScoringMode.CUMULATIVE_EXTENDED else ScoringMode.EXTENDED_DIFF_ONLY
+            }
+
+            val verbRuleStr = obj.optString("japaneseVerbRule", "")
+            val entryVerbRule = if (verbRuleStr.isNotEmpty()) {
+                try {
+                    JapaneseVerbRule.valueOf(verbRuleStr)
+                } catch (_: Exception) {
+                    JapaneseVerbRule.CABOOSE
+                }
+            } else {
+                JapaneseVerbRule.CABOOSE
+            }
+
             result.add(
                 SavedGameEntry(
                     id = obj.optLong("id", 0L),
@@ -454,7 +491,9 @@ object SavedGamesManager {
                     board = savedBoard,
                     validatedWords = savedValidatedWords,
                     language = entryLanguage,
-                    sprinkledCells = sprinkled
+                    sprinkledCells = sprinkled,
+                    scoringMode = entryScoringMode,
+                    japaneseVerbRule = entryVerbRule
                 )
             )
         }
